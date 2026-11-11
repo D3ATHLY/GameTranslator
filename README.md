@@ -240,5 +240,9 @@ swift build --package-path core
 ## ⚖️ Lisans & Telif Hakkı
 
 Bu proje **[GNU AGPL-3.0](LICENSE)** lisansı altında açık kaynak olarak sunulmaktadır.  
-Geliştirici: **Sefflex** — Telif Hakkı © 2026 GameTranslator Pro. Tüm hakları saklıdır.  
-Çekirdek ağ ve video yakalama altyapısında açık kaynaklı [chiaki-ng](https://github.com/chiaki-ng/chiaki-ng), TV altyazı uygulamalarının altyapısında ise [CouchSubs](https://github.com/yorulmazsinan/couchsubs) projesinin temellerinden yararlanılmıştır.
+Bu proje Sinan Yorulmaz'ın [CouchSubs](https://github.com/yorulmazsinan/couchsubs) projesinden türetilmiştir, 10 Kasım 2026'dan itibaren geliştirilmiş ve değiştirilmiştir.
+
+* Copyright (C) 2026 Sinan Yorulmaz ([CouchSubs](https://github.com/yorulmazsinan/couchsubs))
+* Copyright (C) 2026 Sefflex ([GameTranslator](https://github.com/Sefflex/GameTranslator) geliştirmeleri ve değişiklikleri)
+
+Çekirdek ağ ve video yakalama altyapısında açık kaynaklı [chiaki-ng](https://github.com/chiaki-ng/chiaki-ng) projesinin temellerinden de yararlanılmıştır.

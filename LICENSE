@@ -1,7 +1,12 @@
 
 ----------------------------------------------------------------------
 GameTranslator - Real-Time Console Subtitle Translation
+Copyright (C) 2026 Sinan Yorulmaz
 Copyright (C) 2026 Sefflex
+
+This project is derived from Sinan Yorulmaz's CouchSubs project
+(https://github.com/yorulmazsinan/couchsubs) and has been modified
+since November 10, 2026.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as published by
