@@ -367,6 +367,251 @@ struct SubtitleEntry: Identifiable, Codable {
     let timestamp: String
 }
 
+// MARK: - Supported Target Languages
+enum SupportedLanguage: String, CaseIterable, Identifiable {
+    case tr = "tr"
+    case en = "en"
+    case de = "de"
+    case es = "es"
+    case fr = "fr"
+    case it = "it"
+    case ru = "ru"
+    case ar = "ar"
+    case pt = "pt"
+    case ja = "ja"
+    case ko = "ko"
+    case zh = "zh"
+
+    var id: String { rawValue }
+
+    var flag: String {
+        switch self {
+        case .tr: "🇹🇷"
+        case .en: "🇬🇧"
+        case .de: "🇩🇪"
+        case .es: "🇪🇸"
+        case .fr: "🇫🇷"
+        case .it: "🇮🇹"
+        case .ru: "🇷🇺"
+        case .ar: "🇸🇦"
+        case .pt: "🇵🇹"
+        case .ja: "🇯🇵"
+        case .ko: "🇰🇷"
+        case .zh: "🇨🇳"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .tr: "Türkçe"
+        case .en: "English"
+        case .de: "Deutsch"
+        case .es: "Español"
+        case .fr: "Français"
+        case .it: "Italiano"
+        case .ru: "Русский"
+        case .ar: "العربية"
+        case .pt: "Português"
+        case .ja: "日本語"
+        case .ko: "한국어"
+        case .zh: "中文"
+        }
+    }
+
+    var promptName: String {
+        switch self {
+        case .tr: "Turkish"
+        case .en: "English"
+        case .de: "German"
+        case .es: "Spanish"
+        case .fr: "French"
+        case .it: "Italian"
+        case .ru: "Russian"
+        case .ar: "Arabic"
+        case .pt: "Portuguese"
+        case .ja: "Japanese"
+        case .ko: "Korean"
+        case .zh: "Simplified Chinese"
+        }
+    }
+}
+
+// MARK: - Custom Subtitles & Community Translation Store
+struct CustomSubtitleItem: Identifiable, Codable, Equatable, Hashable {
+    var id: UUID = UUID()
+    var source: String
+    var translation: String
+    var isEnabled: Bool = true
+}
+
+class CustomSubtitleStore: ObservableObject {
+    static let shared = CustomSubtitleStore()
+
+    @Published var isEnabled: Bool = true {
+        didSet { UserDefaults.standard.set(isEnabled, forKey: "gt_custom_subs_enabled") }
+    }
+    @Published var activePackName: String = "Özel Çeviriler"
+    @Published var items: [CustomSubtitleItem] = []
+
+    private var lookupCache: [String: String] = [:]
+
+    private var fileURL: URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let dir = appSupport.appendingPathComponent("GameTranslator", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("custom_subtitles.json")
+    }
+
+    init() {
+        self.isEnabled = UserDefaults.standard.object(forKey: "gt_custom_subs_enabled") as? Bool ?? true
+        load()
+    }
+
+    func rebuildLookup() {
+        lookupCache.removeAll()
+        for item in items where item.isEnabled {
+            let key = normalize(item.source)
+            if !key.isEmpty {
+                lookupCache[key] = item.translation
+            }
+        }
+    }
+
+    func normalize(_ text: String) -> String {
+        return text.lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "“", with: "\"")
+            .replacingOccurrences(of: "”", with: "\"")
+            .replacingOccurrences(of: "’", with: "'")
+            .replacingOccurrences(of: "\n", with: " ")
+    }
+
+    func lookup(_ text: String) -> String? {
+        guard isEnabled, !items.isEmpty else { return nil }
+        let norm = normalize(text)
+        if let match = lookupCache[norm] {
+            return match
+        }
+        let stripped = norm.filter { $0.isLetter || $0.isNumber || $0.isWhitespace }
+        for (k, v) in lookupCache {
+            let kStripped = k.filter { $0.isLetter || $0.isNumber || $0.isWhitespace }
+            if kStripped == stripped {
+                return v
+            }
+        }
+        return nil
+    }
+
+    func add(source: String, translation: String) {
+        let trimmedSrc = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedTr = translation.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedSrc.isEmpty, !trimmedTr.isEmpty else { return }
+        items.insert(CustomSubtitleItem(source: trimmedSrc, translation: trimmedTr), at: 0)
+        rebuildLookup()
+        save()
+    }
+
+    func remove(id: UUID) {
+        items.removeAll(where: { $0.id == id })
+        rebuildLookup()
+        save()
+    }
+
+    func clearAll() {
+        items.removeAll()
+        lookupCache.removeAll()
+        save()
+    }
+
+    func save() {
+        if let data = try? JSONEncoder().encode(items) {
+            try? data.write(to: fileURL, options: .atomic)
+        }
+    }
+
+    func load() {
+        if let data = try? Data(contentsOf: fileURL),
+           let loaded = try? JSONDecoder().decode([CustomSubtitleItem].self, from: data) {
+            self.items = loaded
+            rebuildLookup()
+        }
+    }
+
+    func importFile(url: URL) -> (success: Bool, count: Int, message: String) {
+        let ext = url.pathExtension.lowercased()
+        if ext == "json" {
+            guard let data = try? Data(contentsOf: url) else {
+                return (false, 0, "JSON dosyası okunamadı.")
+            }
+            if let dict = try? JSONSerialization.jsonObject(with: data) as? [String: String] {
+                var added = 0
+                for (k, v) in dict {
+                    items.append(CustomSubtitleItem(source: k, translation: v))
+                    added += 1
+                }
+                activePackName = url.deletingPathExtension().lastPathComponent
+                rebuildLookup()
+                save()
+                return (true, added, "\(added) adet altyazı eklendi.")
+            } else if let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+                var added = 0
+                for item in arr {
+                    let en = (item["en"] ?? item["source"] ?? item["english"] ?? item["text"]) as? String ?? ""
+                    let tr = (item["tr"] ?? item["translation"] ?? item["turkish"]) as? String ?? ""
+                    if !en.isEmpty && !tr.isEmpty {
+                        items.append(CustomSubtitleItem(source: en, translation: tr))
+                        added += 1
+                    }
+                }
+                activePackName = url.deletingPathExtension().lastPathComponent
+                rebuildLookup()
+                save()
+                return (true, added, "\(added) adet altyazı eklendi.")
+            }
+            return (false, 0, "JSON formatı anlaşılamadı.")
+        } else if ext == "srt" || ext == "txt" {
+            guard let content = try? String(contentsOf: url, encoding: .utf8) else {
+                return (false, 0, "Metin dosyası okunamadı.")
+            }
+            var added = 0
+            let lines = content.components(separatedBy: .newlines)
+            for line in lines {
+                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.isEmpty || trimmed.hasPrefix("//") || trimmed.hasPrefix("#") { continue }
+                if trimmed.contains("=") {
+                    let parts = trimmed.components(separatedBy: "=")
+                    if parts.count >= 2 {
+                        let en = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
+                        let tr = parts[1...].joined(separator: "=").trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !en.isEmpty && !tr.isEmpty {
+                            items.append(CustomSubtitleItem(source: en, translation: tr))
+                            added += 1
+                        }
+                    }
+                } else if trimmed.contains("\t") {
+                    let parts = trimmed.components(separatedBy: "\t")
+                    if parts.count >= 2 {
+                        let en = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
+                        let tr = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !en.isEmpty && !tr.isEmpty {
+                            items.append(CustomSubtitleItem(source: en, translation: tr))
+                            added += 1
+                        }
+                    }
+                }
+            }
+            if added > 0 {
+                activePackName = url.deletingPathExtension().lastPathComponent
+                rebuildLookup()
+                save()
+                return (true, added, "\(added) adet altyazı eklendi.")
+            }
+            return (false, 0, "Dosyada 'İngilizce = Türkçe' formatında altyazı bulunamadı.")
+        }
+        return (false, 0, "Desteklenmeyen dosya türü (.srt, .json, .txt desteklenir).")
+    }
+}
+
 enum TranslationModel: String, CaseIterable, Identifiable {
     case appleLocal = "local_apple"
     case gemini = "gemini"
@@ -407,6 +652,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case ocrArea = "ocrArea"
     case display = "display"
     case models = "models"
+    case customSubs = "customSubs"
     case system = "system"
     case guide = "guide"
 
@@ -417,6 +663,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .ocrArea: "Oyun Okuma Alanı"
         case .display: "TV Görünümü"
         case .models: "Çeviri & Modeller"
+        case .customSubs: "Özel Altyazı"
         case .system: "Bağlantı & Sistem"
         case .guide: "Hızlı Rehber"
         }
@@ -427,6 +674,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .ocrArea: "viewfinder.rectangular"
         case .display: "tv.fill"
         case .models: "brain.head.profile"
+        case .customSubs: "captions.bubble.fill"
         case .system: "link"
         case .guide: "book.fill"
         }
@@ -1081,10 +1329,42 @@ final class AppState {
     var bypassSetup: Bool = false
     var showCalibrationImage: Bool = true
     
-    // Model
-    var selectedModel: TranslationModel = .appleLocal
-    var geminiApiKey: String = ""
-    var deepLApiKey: String = ""
+    // Target Language
+    var targetLanguage: String = UserDefaults.standard.string(forKey: "gt_target_language") ?? "tr" {
+        didSet {
+            UserDefaults.standard.set(targetLanguage, forKey: "gt_target_language")
+        }
+    }
+    
+    // Model & API Keys
+    var selectedModel: TranslationModel = {
+        if let saved = UserDefaults.standard.string(forKey: "gt_selected_model"),
+           let model = TranslationModel(rawValue: saved) {
+            return model
+        }
+        return .appleLocal
+    }() {
+        didSet {
+            UserDefaults.standard.set(selectedModel.rawValue, forKey: "gt_selected_model")
+        }
+    }
+    
+    var geminiApiKey: String = UserDefaults.standard.string(forKey: "gt_gemini_key") ?? "" {
+        didSet {
+            UserDefaults.standard.set(geminiApiKey, forKey: "gt_gemini_key")
+        }
+    }
+    
+    var deepLApiKey: String = UserDefaults.standard.string(forKey: "gt_deepl_key") ?? "" {
+        didSet {
+            UserDefaults.standard.set(deepLApiKey, forKey: "gt_deepl_key")
+        }
+    }
+
+    // Özel Altyazı Durum ve Giriş Alanları
+    var customSubsStatusMessage: String? = nil
+    var newCustomEnglish: String = ""
+    var newCustomTranslation: String = ""
     
     // TV Altyazı Ayarları
     var selectedColor: String = "#FFFFFF"
@@ -1867,24 +2147,174 @@ final class AppState {
     }
 
     func translateText(_ text: String) async -> String {
-        if !deepLApiKey.isEmpty {
-            if let tr = await translateDeepL(text: text, key: deepLApiKey) {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return text }
+
+        // 1. ÖZEL ALTYAZI KONTROLÜ (Custom Subtitles & Community Packs - 0ms)
+        if let custom = CustomSubtitleStore.shared.lookup(clean) {
+            return custom
+        }
+
+        let target = self.targetLanguage
+
+        // 2. KULLANICININ SEÇTİĞİ MODEL
+        switch selectedModel {
+        case .gemini:
+            if !geminiApiKey.isEmpty {
+                if let tr = await translateGemini(text: clean, key: geminiApiKey, targetLang: target) {
+                    return tr
+                }
+            }
+            // Gemini API anahtarı yoksa veya hata verirse otomatik güvenilir yedek
+            if let fallback = await translateGoogleGTX(text: clean, targetLang: target) {
+                return fallback
+            }
+
+        case .deepL:
+            if !deepLApiKey.isEmpty {
+                if let tr = await translateDeepL(text: clean, key: deepLApiKey, targetLang: target) {
+                    return tr
+                }
+            }
+            // DeepL API anahtarı yoksa veya kota bittiyse otomatik güvenilir yedek
+            if let fallback = await translateGoogleGTX(text: clean, targetLang: target) {
+                return fallback
+            }
+
+        case .appleLocal, .marian:
+            // Yerel NPU / Marian model akışı
+            if let tr = await translateGoogleGTX(text: clean, targetLang: target) {
                 return tr
             }
         }
-        if let tr = await translateGoogleGTX(text: text) {
-            return tr
+
+        // Son Çare: Çoklu Google Mirror Motoru
+        if let finalFallback = await translateGoogleGTX(text: clean, targetLang: target) {
+            return finalFallback
         }
-        return text
+
+        return clean
     }
 
-    private func translateGoogleGTX(text: String) async -> String? {
-        guard let encoded = text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=tr&dt=t&q=\(encoded)") else {
+    // MARK: - Google Gemini 2.5 Flash Yapay Zeka Çeviri Motoru
+    private func translateGemini(text: String, key: String, targetLang: String) async -> String? {
+        let cleanKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanKey.isEmpty else { return nil }
+
+        let targetName = SupportedLanguage(rawValue: targetLang)?.promptName ?? "Turkish"
+        let prompt = "You are a professional video game subtitle localization expert. Translate the following game dialogue/subtitle from English to \(targetName). Output ONLY the final translated text without quotation marks, markdown, explanations, or notes. Keep the tone natural and authentic to the game.\n\nSubtitle:\n\(text)"
+
+        let payload: [String: Any] = [
+            "contents": [
+                [
+                    "role": "user",
+                    "parts": [
+                        ["text": prompt]
+                    ]
+                ]
+            ],
+            "generationConfig": [
+                "temperature": 0.2,
+                "maxOutputTokens": 200
+            ]
+        ]
+
+        guard let httpBody = try? JSONSerialization.data(withJSONObject: payload) else { return nil }
+
+        // Öncelik: gemini-2.5-flash -> gemini-2.0-flash -> gemini-1.5-flash
+        let models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+        for model in models {
+            guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent?key=\(cleanKey)") else { continue }
+
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.timeoutInterval = 4.0
+            request.httpBody = httpBody
+
+            guard let (data, resp) = try? await URLSession.shared.data(for: request),
+                  let http = resp as? HTTPURLResponse, http.statusCode == 200,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let candidates = json["candidates"] as? [[String: Any]],
+                  let firstCandidate = candidates.first,
+                  let content = firstCandidate["content"] as? [String: Any],
+                  let parts = content["parts"] as? [[String: Any]],
+                  let firstPart = parts.first,
+                  let resultText = firstPart["text"] as? String else {
+                continue
+            }
+
+            let cleaned = resultText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !cleaned.isEmpty {
+                return cleaned
+            }
+        }
+        return nil
+    }
+
+    // MARK: - DeepL Pro & Free API Motoru
+    private func translateDeepL(text: String, key: String, targetLang: String) async -> String? {
+        let cleanKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanKey.isEmpty else { return nil }
+
+        let isFree = cleanKey.hasSuffix(":fx")
+        let base = isFree ? "https://api-free.deepl.com/v2/translate" : "https://api.deepl.com/v2/translate"
+        guard let url = URL(string: base) else { return nil }
+
+        let deepLTarget = targetLang.uppercased()
+        let jsonBody: [String: Any] = [
+            "text": [text],
+            "target_lang": deepLTarget,
+            "source_lang": "EN"
+        ]
+
+        guard let bodyData = try? JSONSerialization.data(withJSONObject: jsonBody) else { return nil }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("DeepL-Auth-Key \(cleanKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 4.0
+        request.httpBody = bodyData
+
+        guard let (data, resp) = try? await URLSession.shared.data(for: request),
+              let http = resp as? HTTPURLResponse, http.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let translations = json["translations"] as? [[String: Any]],
+              let first = translations.first?["text"] as? String else {
             return nil
         }
+        let res = first.trimmingCharacters(in: .whitespacesAndNewlines)
+        return res.isEmpty ? nil : res
+    }
+
+    // MARK: - Güvenilir Çift Uçlu Google Çeviri Motoru (Kesintisiz Yedek)
+    private func translateGoogleGTX(text: String, targetLang: String) async -> String? {
+        // 1. Ana Uç Nokta (gtx)
+        if let result = await translateGoogleGTXEndpoint(text: text, targetLang: targetLang) {
+            return result
+        }
+        // 2. Yedek Ayna (dict-chrome-ex)
+        if let result = await translateGoogleDictMirror(text: text, targetLang: targetLang) {
+            return result
+        }
+        return nil
+    }
+
+    private func translateGoogleGTXEndpoint(text: String, targetLang: String) async -> String? {
+        var comp = URLComponents(string: "https://translate.googleapis.com/translate_a/single")
+        comp?.queryItems = [
+            URLQueryItem(name: "client", value: "gtx"),
+            URLQueryItem(name: "sl", value: "auto"),
+            URLQueryItem(name: "tl", value: targetLang),
+            URLQueryItem(name: "dt", value: "t"),
+            URLQueryItem(name: "q", value: text)
+        ]
+        guard let url = comp?.url else { return nil }
         var req = URLRequest(url: url)
-        req.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+        req.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+        req.timeoutInterval = 4.0
+
         guard let (data, resp) = try? await URLSession.shared.data(for: req),
               let http = resp as? HTTPURLResponse, http.statusCode == 200,
               let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
@@ -1897,26 +2327,38 @@ final class AppState {
                 translated += piece
             }
         }
-        return translated.isEmpty ? nil : translated
+        let res = translated.trimmingCharacters(in: .whitespacesAndNewlines)
+        return res.isEmpty ? nil : res
     }
 
-    private func translateDeepL(text: String, key: String) async -> String? {
-        guard let url = URL(string: "https://api-free.deepl.com/v2/translate") else { return nil }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("DeepL-Auth-Key \(key)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        let body = "text=\(text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")&target_lang=TR&source_lang=EN"
-        request.httpBody = body.data(using: .utf8)
+    private func translateGoogleDictMirror(text: String, targetLang: String) async -> String? {
+        var comp = URLComponents(string: "https://clients5.google.com/translate_a/t")
+        comp?.queryItems = [
+            URLQueryItem(name: "client", value: "dict-chrome-ex"),
+            URLQueryItem(name: "sl", value: "auto"),
+            URLQueryItem(name: "tl", value: targetLang),
+            URLQueryItem(name: "q", value: text)
+        ]
+        guard let url = comp?.url else { return nil }
+        var req = URLRequest(url: url)
+        req.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", forHTTPHeaderField: "User-Agent")
+        req.timeoutInterval = 4.0
 
-        guard let (data, resp) = try? await URLSession.shared.data(for: request),
+        guard let (data, resp) = try? await URLSession.shared.data(for: req),
               let http = resp as? HTTPURLResponse, http.statusCode == 200,
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let translations = json["translations"] as? [[String: Any]],
-              let first = translations.first?["text"] as? String else {
+              let json = try? JSONSerialization.jsonObject(with: data) as? [Any] else {
             return nil
         }
-        return first
+        var translated = ""
+        for item in json {
+            if let arr = item as? [Any], let piece = arr.first as? String {
+                translated += piece
+            } else if let s = item as? String {
+                translated += s
+            }
+        }
+        let res = translated.trimmingCharacters(in: .whitespacesAndNewlines)
+        return res.isEmpty ? nil : res
     }
 
     func captureActiveWindowOrScreen() {
@@ -1995,6 +2437,19 @@ final class AppState {
             self.tvHost = tv
             self.tvConnected = true
             self.tvDeviceName = "Android TV (\(tv))"
+        }
+        if let savedLang = UserDefaults.standard.string(forKey: "gt_target_language"), !savedLang.isEmpty {
+            self.targetLanguage = savedLang
+        }
+        if let savedModel = UserDefaults.standard.string(forKey: "gt_selected_model"),
+           let model = TranslationModel(rawValue: savedModel) {
+            self.selectedModel = model
+        }
+        if let gemKey = UserDefaults.standard.string(forKey: "gt_gemini_key") {
+            self.geminiApiKey = gemKey
+        }
+        if let dlKey = UserDefaults.standard.string(forKey: "gt_deepl_key") {
+            self.deepLApiKey = dlKey
         }
 
         server.onClientsChanged = { [weak self] count in
@@ -2587,6 +3042,7 @@ struct MainWindowView: View {
                     case .ocrArea: ocrAreaTabContent
                     case .display: displayTabContent
                     case .models:  modelsTabContent
+                    case .customSubs: customSubsTabContent
                     case .system:  systemTabContent
                     case .guide:   guideTabContent
                     }
@@ -3210,11 +3666,60 @@ struct MainWindowView: View {
 
     // MARK: - 3. ÇEVİRİ & MODELLER SEKMESİ
     private var modelsTabContent: some View {
-        VStack(alignment: .leading, spacing: 13) {
-            Text("Hangi Çeviri Modelini Seçmelisiniz?").font(.system(size: 12.5, weight: .bold)).foregroundStyle(Color.white)
+        VStack(alignment: .leading, spacing: 14) {
+            // HEDEF DİL SEÇİCİ
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Image(systemName: "globe")
+                        .foregroundStyle(Color(hex: "#38BDF8"))
+                    Text("🎯 Hedef Çeviri Dili (Altyazı Dili)")
+                        .font(.system(size: 12.5, weight: .bold))
+                        .foregroundStyle(Color.white)
+                    Spacer()
+                    Text("Seçili: \(SupportedLanguage(rawValue: state.targetLanguage)?.title ?? state.targetLanguage)")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color(hex: "#38BDF8"))
+                }
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(SupportedLanguage.allCases) { lang in
+                            Button {
+                                state.targetLanguage = lang.rawValue
+                            } label: {
+                                HStack(spacing: 5) {
+                                    Text(lang.flag)
+                                    Text(lang.title)
+                                        .font(.system(size: 11, weight: state.targetLanguage == lang.rawValue ? .bold : .medium))
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .foregroundStyle(state.targetLanguage == lang.rawValue ? Color.white : Color.white.opacity(0.7))
+                                .background(
+                                    state.targetLanguage == lang.rawValue ? Color(hex: "#0A84FF") : Color.white.opacity(0.06),
+                                    in: RoundedRectangle(cornerRadius: 6)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .stroke(state.targetLanguage == lang.rawValue ? Color.white.opacity(0.4) : Color.white.opacity(0.08), lineWidth: 1)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+            .padding(11)
+            .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.08), lineWidth: 1))
+
+            Text("Hangi Çeviri Motorunu Kullanmak İstiyorsunuz?")
+                .font(.system(size: 12.5, weight: .bold))
+                .foregroundStyle(Color.white)
 
             ForEach(TranslationModel.allCases) { model in
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 7) {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(model.title).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.white)
@@ -3233,26 +3738,226 @@ struct MainWindowView: View {
                     }
 
                     if model == .gemini {
-                        HStack {
-                            SecureField("Google Gemini API Anahtarı (AI Studio)", text: $state.geminiApiKey)
-                                .textFieldStyle(.plain).font(.system(size: 10.5)).padding(5).background(Color.black.opacity(0.3), in: RoundedRectangle(cornerRadius: 5))
-                            Button("Kaydet") { state.selectedModel = .gemini }
-                                .font(.system(size: 10.5)).padding(.horizontal, 8).padding(.vertical, 3).background(Color.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 5)).buttonStyle(.plain)
+                        VStack(alignment: .leading, spacing: 5) {
+                            HStack {
+                                SecureField("Google Gemini API Anahtarı (AI Studio)", text: $state.geminiApiKey)
+                                    .textFieldStyle(.plain)
+                                    .font(.system(size: 10.5))
+                                    .padding(6)
+                                    .background(Color.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 5))
+
+                                Button("Kaydet & Aktif Et") {
+                                    state.selectedModel = .gemini
+                                }
+                                .font(.system(size: 10.5, weight: .semibold))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(Color(hex: "#0A84FF"), in: RoundedRectangle(cornerRadius: 5))
+                                .buttonStyle(.plain)
+                            }
+                            HStack {
+                                if !state.geminiApiKey.isEmpty {
+                                    Text("✓ API Anahtarı Kaydedildi (gemini-2.5-flash)")
+                                        .font(.system(size: 9.5, weight: .medium))
+                                        .foregroundStyle(Color.green)
+                                }
+                                Spacer()
+                                Button("Ücretsiz API Anahtarı Al (aistudio.google.com)") {
+                                    if let url = URL(string: "https://aistudio.google.com/app/apikey") {
+                                        NSWorkspace.shared.open(url)
+                                    }
+                                }
+                                .font(.system(size: 9.5))
+                                .foregroundStyle(Color(hex: "#38BDF8"))
+                                .buttonStyle(.plain)
+                            }
                         }
                     } else if model == .deepL {
-                        HStack {
-                            SecureField("DeepL Auth Key (api-free.deepl.com)", text: $state.deepLApiKey)
-                                .textFieldStyle(.plain).font(.system(size: 10.5)).padding(5).background(Color.black.opacity(0.3), in: RoundedRectangle(cornerRadius: 5))
-                            Button("Kaydet") { state.selectedModel = .deepL }
-                                .font(.system(size: 10.5)).padding(.horizontal, 8).padding(.vertical, 3).background(Color.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 5)).buttonStyle(.plain)
+                        VStack(alignment: .leading, spacing: 5) {
+                            HStack {
+                                SecureField("DeepL Auth Key (api-free.deepl.com veya Pro)", text: $state.deepLApiKey)
+                                    .textFieldStyle(.plain)
+                                    .font(.system(size: 10.5))
+                                    .padding(6)
+                                    .background(Color.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 5))
+
+                                Button("Kaydet & Aktif Et") {
+                                    state.selectedModel = .deepL
+                                }
+                                .font(.system(size: 10.5, weight: .semibold))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(Color(hex: "#0A84FF"), in: RoundedRectangle(cornerRadius: 5))
+                                .buttonStyle(.plain)
+                            }
+                            if !state.deepLApiKey.isEmpty {
+                                Text("✓ DeepL Anahtarı Kaydedildi")
+                                    .font(.system(size: 9.5, weight: .medium))
+                                    .foregroundStyle(Color.green)
+                            }
                         }
                     }
                 }
-                .padding(10)
+                .padding(11)
                 .background(state.selectedModel == model ? Color(hex: "#0A84FF").opacity(0.12) : Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(state.selectedModel == model ? Color(hex: "#0A84FF").opacity(0.4) : Color.white.opacity(0.08), lineWidth: 1))
                 .contentShape(Rectangle())
                 .onTapGesture { state.selectedModel = model }
+            }
+        }
+    }
+
+    // MARK: - 3b. ÖZEL ALTYAZI & EL ÇEVİRİSİ SEKMESİ
+    private var customSubsTabContent: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Özel Altyazı & El Çevirisi Paketleri")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Color.white)
+                    Text("Oyun için el yapımı çevirilerinizi veya hazır altyazı dosyalarınızı (.srt, .json, .txt) ekleyin. Bu cümleler yapay zekanın önüne geçer.")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(Color.white.opacity(0.7))
+                }
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { CustomSubtitleStore.shared.isEnabled },
+                    set: { CustomSubtitleStore.shared.isEnabled = $0 }
+                ))
+                .toggleStyle(.switch)
+            }
+            .padding(11)
+            .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.08), lineWidth: 1))
+
+            // Dosya Yükleme & Durum Kartı
+            HStack(spacing: 10) {
+                Button {
+                    let panel = NSOpenPanel()
+                    panel.allowsMultipleSelection = false
+                    panel.canChooseDirectories = false
+                    panel.canChooseFiles = true
+                    panel.allowedContentTypes = [
+                        .json, .text, .plainText,
+                        UTType(filenameExtension: "srt") ?? .text
+                    ]
+                    if panel.runModal() == .OK, let url = panel.url {
+                        let res = CustomSubtitleStore.shared.importFile(url: url)
+                        state.customSubsStatusMessage = res.message
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "folder.badge.plus")
+                        Text("📁 Altyazı Dosyası Yükle (.srt, .json, .txt)")
+                    }
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(Color(hex: "#0A84FF"), in: RoundedRectangle(cornerRadius: 6))
+                }
+                .buttonStyle(.plain)
+
+                if !CustomSubtitleStore.shared.items.isEmpty {
+                    Button {
+                        CustomSubtitleStore.shared.clearAll()
+                        state.customSubsStatusMessage = "Tüm özel altyazılar temizlendi."
+                    } label: {
+                        Text("Tümünü Temizle")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(Color(hex: "#FF453A"))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color(hex: "#FF453A").opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Spacer()
+
+                Text("\(CustomSubtitleStore.shared.items.count) Kayıtlı Satır")
+                    .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Color.white.opacity(0.6))
+            }
+
+            if let msg = state.customSubsStatusMessage {
+                Text(msg)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Color.green)
+                    .padding(6)
+                    .background(Color.green.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+            }
+
+            // Manuel Cümle Ekleme
+            VStack(alignment: .leading, spacing: 7) {
+                Text("✍️ Manuel Özel Çeviri Ekle").font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.white)
+                HStack(spacing: 8) {
+                    TextField("İngilizce Cümle (Örn: Follow me)", text: $state.newCustomEnglish)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 10.5))
+                        .padding(6)
+                        .background(Color.black.opacity(0.3), in: RoundedRectangle(cornerRadius: 5))
+
+                    TextField("Özel Çevirisi (Örn: Beni takip et)", text: $state.newCustomTranslation)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 10.5))
+                        .padding(6)
+                        .background(Color.black.opacity(0.3), in: RoundedRectangle(cornerRadius: 5))
+
+                    Button("Ekle") {
+                        CustomSubtitleStore.shared.add(source: state.newCustomEnglish, translation: state.newCustomTranslation)
+                        state.newCustomEnglish = ""
+                        state.newCustomTranslation = ""
+                        state.customSubsStatusMessage = "Özel çeviri başarıyla eklendi."
+                    }
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.green.opacity(0.8), in: RoundedRectangle(cornerRadius: 5))
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(10)
+            .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.06), lineWidth: 1))
+
+            // Yüklü Cümleler Listesi
+            if !CustomSubtitleStore.shared.items.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Kayıtlı Altyazılar (Öncelikli Eşleşenler)").font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.white.opacity(0.8))
+
+                    ScrollView(.vertical) {
+                        LazyVStack(spacing: 4) {
+                            ForEach(CustomSubtitleStore.shared.items.prefix(50)) { item in
+                                HStack {
+                                    Text(item.source)
+                                        .font(.system(size: 10, weight: .medium))
+                                        .foregroundStyle(Color.white.opacity(0.7))
+                                        .lineLimit(1)
+                                    Image(systemName: "arrow.right").font(.system(size: 8)).foregroundStyle(Color.white.opacity(0.4))
+                                    Text(item.translation)
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundStyle(Color(hex: "#38BDF8"))
+                                        .lineLimit(1)
+                                    Spacer()
+                                    Button {
+                                        CustomSubtitleStore.shared.remove(id: item.id)
+                                    } label: {
+                                        Image(systemName: "trash").font(.system(size: 9)).foregroundStyle(Color.white.opacity(0.4))
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.white.opacity(0.02), in: RoundedRectangle(cornerRadius: 4))
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 180)
+                }
+                .padding(10)
+                .background(Color.black.opacity(0.2), in: RoundedRectangle(cornerRadius: 8))
             }
         }
     }
