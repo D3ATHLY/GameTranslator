@@ -174,10 +174,20 @@ PlayStation normalde Remote Play açılınca elinizdeki kumandayı televizyondan
 
 | Model | Nasıl Çalışır? | Ne Zaman Tercih Edilmeli? |
 | :--- | :--- | :--- |
-| **1. Apple Yerel (Önerilen)** | Mac'inizin Neural Engine (NPU) yapay zeka çipini kullanır. | **0 ms gecikme sağlar.** Tamamen internetsiz, çevrimdışı, kotasız ve ücretsizdir. |
+| **🎮 Hazır Oyun Yaması & Topluluk Paketi** | Oyunun orijinal Türkçe yama metinlerini (`.json` / `.txt` / `.srt`) doğrudan eşler. | **0 ms gecikme ve %100 profesyonel insan çevirisi kalitesi sağlar.** Topluluk yamaları veya el çevirileri için kullanılır. Yamada olmayan ara cümleleri otomatik yapay zekayla tamamlar. |
+| **1. Apple Yerel (NPU)** | Mac'inizin Neural Engine (NPU) yapay zeka çipini kullanır. | **0 ms gecikme sağlar.** Tamamen internetsiz, çevrimdışı, kotasız ve ücretsizdir. |
 | **2. Google Gemini 2.5 Flash** | Google Gemini API (AI Studio). | GTA 6 gibi oyunlardaki **sokak argosu, küfürler, şakalar ve hikaye bağlamını** en zeki ve en doğal Türkçeyle çeviren yapay zeka modelidir. |
 | **3. DeepL API** | DeepL Free / Pro API. | Dünyanın en bilinen profesyonel çeviri motorudur. Kusursuz dilbilgisi için tercih edilir. |
 | **4. Yerel Derin Öğrenme** | Bilgisayarınızın CPU/GPU'sunda yerel çalışan MarianMT / DirectML sinir ağı modeli. | İnternetsiz yerel yapay sinir ağı çevirisi. |
+
+---
+
+## 🎮 Topluluk Oyun Yamaları (Community Game Patches)
+
+GameTranslator, fan çeviri gruplarının veya topluluk üyelerinin hazırladığı hazır yama dosyalarını (`.json`, `.txt`, `.srt`) doğrudan destekler. 
+
+* 📁 Hazır oyun yamaları için GitHub depomuzdaki [`patches/`](patches/) klasörünü ziyaret edebilir ve dilediğiniz oyunu indirip tek tıkla uygulamaya yükleyebilirsiniz.
+* 🛠️ Kendi yama dökümlerinizi GameTranslator formatına dönüştürmek için [`scripts/patch_converter.py`](scripts/patch_converter.py) aracını kullanabilirsiniz.
 
 ---
 
@@ -190,6 +200,10 @@ GameTranslate/
 │   ├── build.sh                    # Tek komutla Apple Developer imzalı derleme aracı
 │   ├── project.yml                 # XcodeGen proje dosyası
 │   └── GameTranslator/             # Varlıklar, ikonlar ve Info.plist
+│
+├── patches/                        # 🎮 Topluluk Oyun Yamaları Deposu (0ms Hazır Türkçe Altyazılar)
+│   ├── README.md                   # Yama ekleme ve katkı rehberi
+│   └── ornek_oyun_yamasi.json      # Örnek topluluk yaması
 │
 ├── windows/                        # 🪟 Windows Yerel Uygulaması (.NET 10, C#, WPF, DirectML)
 │   ├── GameTranslator.Windows.slnx # Visual Studio / Rider Çözümü

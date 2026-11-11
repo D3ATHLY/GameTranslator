@@ -450,7 +450,9 @@ class CustomSubtitleStore: ObservableObject {
     @Published var isEnabled: Bool = true {
         didSet { UserDefaults.standard.set(isEnabled, forKey: "gt_custom_subs_enabled") }
     }
-    @Published var activePackName: String = "Özel Çeviriler"
+    @Published var activePackName: String = UserDefaults.standard.string(forKey: "gt_active_pack_name") ?? "" {
+        didSet { UserDefaults.standard.set(activePackName, forKey: "gt_active_pack_name") }
+    }
     @Published var items: [CustomSubtitleItem] = []
 
     private var lookupCache: [String: String] = [:]
@@ -493,12 +495,60 @@ class CustomSubtitleStore: ObservableObject {
             return match
         }
         let stripped = norm.filter { $0.isLetter || $0.isNumber || $0.isWhitespace }
+        guard !stripped.isEmpty else { return nil }
+
         for (k, v) in lookupCache {
             let kStripped = k.filter { $0.isLetter || $0.isNumber || $0.isWhitespace }
             if kStripped == stripped {
                 return v
             }
         }
+
+        // 3. Konuşmacı etiketi ayrıştırması (Örn: "Logan: No, she's gonna drown!")
+        var speakerPrefix: String? = nil
+        var cleanDialogue = norm
+        if let colonIndex = text.firstIndex(of: ":") {
+            let speaker = String(text[..<colonIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if speaker.count <= 25 && !speaker.contains("\n") {
+                speakerPrefix = speaker
+                cleanDialogue = normalize(String(text[text.index(after: colonIndex)...]))
+
+                if let match = lookupCache[cleanDialogue] {
+                    return "\(speaker): \(match)"
+                }
+                let cleanStripped = cleanDialogue.filter { $0.isLetter || $0.isNumber || $0.isWhitespace }
+                for (k, v) in lookupCache {
+                    let kStripped = k.filter { $0.isLetter || $0.isNumber || $0.isWhitespace }
+                    if kStripped == cleanStripped {
+                        return "\(speaker): \(v)"
+                    }
+                }
+            }
+        }
+
+        // 4. Kelime bazlı akıllı örtüşme (Fuzzy Match - %75 ve üzeri benzerlik)
+        let words = stripped.components(separatedBy: .whitespaces).filter { $0.count >= 2 }
+        if words.count >= 3 {
+            var bestScore = 0.0
+            var bestMatch: String? = nil
+            for (k, v) in lookupCache {
+                let kStripped = k.filter { $0.isLetter || $0.isNumber || $0.isWhitespace }
+                let kWords = Set(kStripped.components(separatedBy: .whitespaces).filter { $0.count >= 2 })
+                let commonCount = words.filter { kWords.contains($0) }.count
+                let score = Double(commonCount) / Double(max(words.count, kWords.count))
+                if score >= 0.75 && score > bestScore {
+                    bestScore = score
+                    bestMatch = v
+                }
+            }
+            if let match = bestMatch {
+                if let speaker = speakerPrefix {
+                    return "\(speaker): \(match)"
+                }
+                return match
+            }
+        }
+
         return nil
     }
 
@@ -520,6 +570,7 @@ class CustomSubtitleStore: ObservableObject {
     func clearAll() {
         items.removeAll()
         lookupCache.removeAll()
+        activePackName = ""
         save()
     }
 
@@ -543,30 +594,52 @@ class CustomSubtitleStore: ObservableObject {
             guard let data = try? Data(contentsOf: url) else {
                 return (false, 0, "JSON dosyası okunamadı.")
             }
-            if let dict = try? JSONSerialization.jsonObject(with: data) as? [String: String] {
-                var added = 0
-                for (k, v) in dict {
-                    items.append(CustomSubtitleItem(source: k, translation: v))
-                    added += 1
-                }
-                activePackName = url.deletingPathExtension().lastPathComponent
-                rebuildLookup()
-                save()
-                return (true, added, "\(added) adet altyazı eklendi.")
-            } else if let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
-                var added = 0
-                for item in arr {
-                    let en = (item["en"] ?? item["source"] ?? item["english"] ?? item["text"]) as? String ?? ""
-                    let tr = (item["tr"] ?? item["translation"] ?? item["turkish"]) as? String ?? ""
-                    if !en.isEmpty && !tr.isEmpty {
-                        items.append(CustomSubtitleItem(source: en, translation: tr))
-                        added += 1
+            if let root = try? JSONSerialization.jsonObject(with: data) {
+                var extracted: [(String, String)] = []
+
+                if let dict = root as? [String: String] {
+                    for (k, v) in dict { extracted.append((k, v)) }
+                } else if let dict = root as? [String: Any] {
+                    if let subs = dict["subtitles"] as? [String: String] {
+                        for (k, v) in subs { extracted.append((k, v)) }
+                    } else if let trans = dict["translations"] as? [String: String] {
+                        for (k, v) in trans { extracted.append((k, v)) }
+                    } else if let lines = dict["lines"] as? [String: String] {
+                        for (k, v) in lines { extracted.append((k, v)) }
+                    } else if let strings = dict["strings"] as? [String: String] {
+                        for (k, v) in strings { extracted.append((k, v)) }
+                    } else {
+                        for (k, v) in dict {
+                            if let s = v as? String {
+                                extracted.append((k, s))
+                            }
+                        }
+                    }
+                } else if let arr = root as? [[String: Any]] {
+                    for item in arr {
+                        let en = (item["en"] ?? item["source"] ?? item["english"] ?? item["text"] ?? item["original"]) as? String ?? ""
+                        let tr = (item["tr"] ?? item["translation"] ?? item["turkish"] ?? item["target"]) as? String ?? ""
+                        if !en.isEmpty && !tr.isEmpty {
+                            extracted.append((en, tr))
+                        }
                     }
                 }
-                activePackName = url.deletingPathExtension().lastPathComponent
-                rebuildLookup()
-                save()
-                return (true, added, "\(added) adet altyazı eklendi.")
+
+                if !extracted.isEmpty {
+                    var added = 0
+                    for (k, v) in extracted {
+                        let trimmedK = k.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let trimmedV = v.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !trimmedK.isEmpty && !trimmedV.isEmpty {
+                            items.append(CustomSubtitleItem(source: trimmedK, translation: trimmedV))
+                            added += 1
+                        }
+                    }
+                    activePackName = url.deletingPathExtension().lastPathComponent
+                    rebuildLookup()
+                    save()
+                    return (true, added, "\(added) adet altyazı eklendi.")
+                }
             }
             return (false, 0, "JSON formatı anlaşılamadı.")
         } else if ext == "srt" || ext == "txt" {
@@ -613,6 +686,7 @@ class CustomSubtitleStore: ObservableObject {
 }
 
 enum TranslationModel: String, CaseIterable, Identifiable {
+    case patch = "patch"
     case appleLocal = "local_apple"
     case gemini = "gemini"
     case deepL = "deepl"
@@ -622,7 +696,8 @@ enum TranslationModel: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .appleLocal: "1. Apple Yerel Çeviri (Önerilen)"
+        case .patch: "🎮 Hazır Oyun Yaması & Topluluk Paketi (0ms)"
+        case .appleLocal: "1. Apple Yerel Çeviri (NPU)"
         case .gemini: "2. Google Gemini 2.5 Flash"
         case .deepL: "3. DeepL API"
         case .marian: "4. Yerel Derin Öğrenme (MarianMT)"
@@ -631,6 +706,7 @@ enum TranslationModel: String, CaseIterable, Identifiable {
 
     var badge: String {
         switch self {
+        case .patch: "%100 İnsan Çevirisi"
         case .appleLocal: "Aktif (0ms)"
         case .gemini: "Yapay Zeka"
         case .deepL: "Pro Dilbilgisi"
@@ -640,6 +716,7 @@ enum TranslationModel: String, CaseIterable, Identifiable {
 
     var desc: String {
         switch self {
+        case .patch: "Oyunun orijinal Türkçe yama metinlerini doğrudan kullanır. Sıfır gecikmeyle profesyonel insan çevirisi basar. Yamada bulunmayan ara cümleleri otomatik yapay zekayla tamamlar."
         case .appleLocal: "Mac'inizin Apple Neural Engine (NPU) çipini kullanır. Tamamen çevrimdışı, internet gerektirmez, 0 ms gecikmeyle anında TV'ye basar."
         case .gemini: "GTA 6 gibi oyunlardaki diyalogları, sokak argosunu ve hikaye bağlamını en akıllı ve doğal şekilde çevirir."
         case .deepL: "Dünyanın en yüksek doğruluklu dilbilgisi motoru. DeepL Free veya Pro API anahtarı gerektirir."
@@ -2159,6 +2236,18 @@ final class AppState {
 
         // 2. KULLANICININ SEÇTİĞİ MODEL
         switch selectedModel {
+        case .patch:
+            // Yama modunda öncelikle yama metinleri arandı; eğer bu replik henüz yamada yoksa
+            // oyuncunun deneyimi bölünmesin diye yapay zeka (Gemini) veya güvenilir yedekle tamamla
+            if !geminiApiKey.isEmpty {
+                if let tr = await translateGemini(text: clean, key: geminiApiKey, targetLang: target) {
+                    return tr
+                }
+            }
+            if let fallback = await translateGoogleGTX(text: clean, targetLang: target) {
+                return fallback
+            }
+
         case .gemini:
             if !geminiApiKey.isEmpty {
                 if let tr = await translateGemini(text: clean, key: geminiApiKey, targetLang: target) {
@@ -3737,7 +3826,95 @@ struct MainWindowView: View {
                         }
                     }
 
-                    if model == .gemini {
+                    if model == .patch {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 8) {
+                                Button {
+                                    let panel = NSOpenPanel()
+                                    panel.title = "Oyun Yaması Seç (.json, .srt, .txt)"
+                                    panel.showsResizeIndicator = true
+                                    panel.showsHiddenFiles = false
+                                    panel.canChooseFiles = true
+                                    panel.canChooseDirectories = false
+                                    panel.allowsMultipleSelection = false
+                                    panel.allowedContentTypes = [
+                                        .json, .text, .plainText,
+                                        UTType(filenameExtension: "srt") ?? .text
+                                    ]
+                                    if panel.runModal() == .OK, let url = panel.url {
+                                        let res = CustomSubtitleStore.shared.importFile(url: url)
+                                        if res.success {
+                                            state.selectedModel = .patch
+                                            CustomSubtitleStore.shared.isEnabled = true
+                                        }
+                                    }
+                                } label: {
+                                    HStack(spacing: 5) {
+                                        Image(systemName: "folder.badge.plus")
+                                        Text("📁 Oyun Yaması Yükle (.json, .srt, .txt)")
+                                    }
+                                    .font(.system(size: 10.5, weight: .semibold))
+                                    .foregroundStyle(Color.white)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(Color(hex: "#0A84FF"), in: RoundedRectangle(cornerRadius: 6))
+                                }
+                                .buttonStyle(.plain)
+
+                                if !CustomSubtitleStore.shared.items.isEmpty {
+                                    Button {
+                                        CustomSubtitleStore.shared.clearAll()
+                                    } label: {
+                                        Text("Yamayı Kaldır")
+                                            .font(.system(size: 10.5))
+                                            .foregroundStyle(Color(hex: "#FF453A"))
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 5)
+                                            .background(Color(hex: "#FF453A").opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+
+                                Spacer()
+
+                                Button {
+                                    if let url = URL(string: "https://github.com/Sefflex/GameTranslator/tree/main/patches") {
+                                        NSWorkspace.shared.open(url)
+                                    }
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "arrow.down.circle")
+                                        Text("Topluluk Yamaları Deposu ↗")
+                                    }
+                                    .font(.system(size: 10, weight: .medium))
+                                    .foregroundStyle(Color(hex: "#38BDF8"))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 5)
+                                    .background(Color(hex: "#38BDF8").opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+                                }
+                                .buttonStyle(.plain)
+                            }
+
+                            if !CustomSubtitleStore.shared.items.isEmpty {
+                                HStack(spacing: 6) {
+                                    Circle().fill(Color.green).frame(width: 6, height: 6)
+                                    Text("Aktif Yama: \(CustomSubtitleStore.shared.activePackName.isEmpty ? "Özel Yama" : CustomSubtitleStore.shared.activePackName)")
+                                        .font(.system(size: 10.5, weight: .semibold))
+                                        .foregroundStyle(Color.white)
+                                    Text("(\(CustomSubtitleStore.shared.items.count) replik hazır)")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(Color.white.opacity(0.65))
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.green.opacity(0.08), in: RoundedRectangle(cornerRadius: 5))
+                            } else {
+                                Text("💡 Henüz bir yama yüklenmedi. Orijinal Türkçe yama metinlerinizi (.json / .txt / .srt) yükleyerek 0 ms gecikmeyle %100 insan çevirisi deneyimi yaşayabilirsiniz. Yamada olmayan ara cümleler otomatik yapay zekayla tamamlanır.")
+                                    .font(.system(size: 9.5))
+                                    .foregroundStyle(Color.white.opacity(0.6))
+                            }
+                        }
+                    } else if model == .gemini {
                         VStack(alignment: .leading, spacing: 5) {
                             HStack {
                                 SecureField("Google Gemini API Anahtarı (AI Studio)", text: $state.geminiApiKey)
