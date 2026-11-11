@@ -155,7 +155,7 @@ Eğer GitHub'dan kaynak kodları (`ZIP` veya `git clone`) ile indirdiyseniz:
 > ⚠️ **Test ve Geliştirme Aşaması:** Akıllı telefonlar ve tabletler (iOS & Android) üzerinden canlı altyazı akışı ve ikinci ekran companion deneyimi şu an **test aşamasındadır (Beta)**.
 > * **Geçici Test Yöntemi:** Telefonunuz veya tabletiniz bilgisayarınızla aynı Wi-Fi ağına bağlıyken, mobil tarayıcınızdan (Safari / Chrome) `http://<BILGISAYAR-IP-ADRESI>:8787/obs` adresini açarak altyazıları mobil ekranınızda canlı olarak takip edebilirsiniz.
 > * Yerel mobil uygulamalar çok yakında testleri tamamlandığında kullanıma sunulacaktır.
-
+> * Mobil uygulamamız geliştiriliyor. Tahmini 2 gün.
 ---
 
 ## 🎮 PlayStation 5 Ayarı (Kumanda Neden Kopmaz?)
