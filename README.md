@@ -1,8 +1,8 @@
 # 🎮 GameTranslator v1.0 Pro — Sefflex Edition
 ### Konsol Oyunları İçin Gerçek Zamanlı, Sıfır Gecikmeli Türkçe Altyazı Sistemi
 
-[![Platform: macOS](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows-blue?style=flat-square&logo=apple)](https://github.com/Sefflex/GameTranslate)
-[![Target: Smart TV](https://img.shields.io/badge/TV-TCL%20Android%20TV%20%7C%20LG%20webOS%20%7C%20Samsung%20Tizen-green?style=flat-square&logo=android)](https://github.com/Sefflex/GameTranslate)
+[![Platform: macOS](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows-blue?style=flat-square&logo=apple)](https://gitlab.com/sefflex/GameTranslator)
+[![Target: Smart TV](https://img.shields.io/badge/TV-TCL%20Android%20TV%20%7C%20LG%20webOS%20%7C%20Samsung%20Tizen-green?style=flat-square&logo=android)](https://gitlab.com/sefflex/GameTranslator)
 [![Zero-Lag](https://img.shields.io/badge/Gecikme-0%20ms%20(Doğrudan%20HDMI)-brightgreen?style=flat-square)](#-temel-mantık-3-cümlede-nasıl-çalışıyor)
 [![License: AGPL-3.0](https://img.shields.io/badge/Lisans-AGPL--3.0-red?style=flat-square)](LICENSE)
 
@@ -175,7 +175,7 @@ PlayStation normalde Remote Play açılınca elinizdeki kumandayı televizyondan
 
 GameTranslator, fan çeviri gruplarının veya topluluk üyelerinin hazırladığı hazır yama dosyalarını (`.json`, `.txt`, `.srt`) doğrudan destekler. 
 
-* 📁 Hazır oyun yamaları için GitHub depomuzdaki [`patches/`](patches/) klasörünü ziyaret edebilir ve dilediğiniz oyunu indirip tek tıkla uygulamaya yükleyebilirsiniz.
+* 📁 Hazır oyun yamaları için GitLab depomuzdaki [`patches/`](patches/) klasörünü ziyaret edebilir ve dilediğiniz oyunu indirip tek tıkla uygulamaya yükleyebilirsiniz.
 * 🛠️ Kendi yama dökümlerinizi GameTranslator formatına dönüştürmek için [`scripts/patch_converter.py`](scripts/patch_converter.py) aracını kullanabilirsiniz.
 
 ---
@@ -246,6 +246,6 @@ Bu proje **[GNU AGPL-3.0](LICENSE)** lisansı altında açık kaynak olarak sunu
 Bu proje Sinan Yorulmaz'ın [CouchSubs](https://github.com/yorulmazsinan/couchsubs) projesinden türetilmiştir, 10 Kasım 2026'dan itibaren geliştirilmiş ve değiştirilmiştir.
 
 * Copyright (C) 2026 Sinan Yorulmaz ([CouchSubs](https://github.com/yorulmazsinan/couchsubs))
-* Copyright (C) 2026 Sefflex ([GameTranslator](https://github.com/Sefflex/GameTranslator) geliştirmeleri ve değişiklikleri)
+* Copyright (C) 2026 Sefflex ([GameTranslator](https://gitlab.com/sefflex/GameTranslator) geliştirmeleri ve değişiklikleri)
 
 Çekirdek ağ ve video yakalama altyapısında açık kaynaklı [chiaki-ng](https://github.com/chiaki-ng/chiaki-ng) projesinin temellerinden de yararlanılmıştır.

@@ -80,6 +80,6 @@ python3 scripts/patch_converter.py --en english_lines.txt --tr turkish_lines.txt
 
 Kendi oyununuz için hazırladığınız veya dönüştürdüğünüz yama dosyalarını bu depoya ekleyip diğer oyuncularla paylaşabilirsiniz:
 
-1. Bu depoyu GitHub'da **Fork** edin.
+1. Bu depoyu GitLab'da **Fork** edin.
 2. Hazırladığınız JSON dosyasını `patches/<oyun-adi>.json` olarak ekleyin.
-3. Bir **Pull Request (PR)** gönderin. İncelenip onaylandıktan sonra tüm GameTranslator kullanıcılarının kullanımına açılacaktır!
+3. Bir **Merge Request (MR)** gönderin. İncelenip onaylandıktan sonra tüm GameTranslator kullanıcılarının kullanımına açılacaktır!

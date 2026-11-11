@@ -4,7 +4,7 @@ GameTranslator is licensed under the GNU AGPL-3.0 (see [LICENSE](LICENSE)). It i
 Sinan Yorulmaz's CouchSubs project (https://github.com/yorulmazsinan/couchsubs) and has been modified
 since November 10, 2026. It includes or downloads the following third-party components. Full source
 code for GameTranslator, including the build scripts that produce the bundled libraries, is available at
-https://github.com/Sefflex/GameTranslator.
+https://gitlab.com/sefflex/GameTranslator.
 
 ## Bundled in the Mac and Windows apps
 

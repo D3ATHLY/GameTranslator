@@ -3878,7 +3878,7 @@ struct MainWindowView: View {
                                 Spacer()
 
                                 Button {
-                                    if let url = URL(string: "https://github.com/Sefflex/GameTranslator/tree/main/patches") {
+                                    if let url = URL(string: "https://gitlab.com/sefflex/GameTranslator/-/tree/main/patches") {
                                         NSWorkspace.shared.open(url)
                                     }
                                 } label: {

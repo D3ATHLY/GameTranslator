@@ -32,7 +32,7 @@ kodu içermez.
 
 TV uygulaması altyazıları yalnız ev ağındaki GameTranslator bilgisayarından alır ve internete bağlanmaz.
 
-Sorularınız için: https://github.com/Sefflex/GameTranslate/issues
+Sorularınız için: https://gitlab.com/sefflex/GameTranslator/-/issues
 
 ## English
 
@@ -58,4 +58,4 @@ sent to DeepL unless you turn this on. PS5 and TV discovery and pairing use your
 The TV app receives subtitles only from the GameTranslator computer on your home network and does not connect
 to the internet.
 
-Contact: https://github.com/Sefflex/GameTranslate/issues
+Contact: https://gitlab.com/sefflex/GameTranslator/-/issues
