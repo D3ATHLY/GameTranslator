@@ -52,49 +52,38 @@ Aşağıdaki adımları takip ederek 2 dakika içinde oyunu Türkçe altyazıyla
 ---
 
 ### 1. 🍏 Mac (macOS Kurulumu - Apple Silicon M1 / M2 / M3 / M4)
-> Apple Silicon Neural Engine NPU çipini ve Vision OCR donanımını kullanarak **0 ms gecikmeyle** çevrimdışı çalışır.
+> Apple Silicon Neural Engine NPU çipini ve Vision OCR donanımını kullanarak **0 ms gecikmeyle** çevrimdışı çalışır.  
+> 💡 **Hızlı İndirme:** [GitLab Sürümler (Releases)](https://gitlab.com/sefflex/GameTranslator/-/releases/v1.0.0) sayfasından hazır imzalı **`GameTranslator-macOS-v1.0.0.zip`** dosyasını doğrudan indirebilirsiniz.
 
-#### 🟢 Yöntem A: Tek Tıkla Otomatik Kurulum ve Başlatma (Önerilen)
-1. **GitHub'dan İndirin:** Bu sayfanın yukarısındaki yeşil **`<> Code`** butonuna tıklayın ve **`Download ZIP`** seçeneğini seçin. İnen ZIP dosyasını klasöre çıkartın.
-2. **Başlatıcıya Çift Tıklayın:** Klasörün içindeki **`GameTranslator.command`** dosyasına çift tıklayın.
-   * *İlk Açılışta:* Sistem uygulamanın henüz derlenmediğini otomatik anlar, gerekli motorları derler, Apple Developer sertifikanızla imzalar, `/Applications/GameTranslator.app` olarak kurar ve arayüzü ekrana getirir (yalnızca ilk seferde 10-15 saniye sürer).
-   * *Sonraki Açılışlarda:* Doğrudan 1 saniyede açılır!
-3. **⚠️ Mac Güvenlik İpuçları (İlk Kez Açarken):**
-   * **"Geliştiricisi Doğrulanamadığı İçin Açılamıyor" veya "İzin Yok" derse:**  
-     Dosyaya **sağ tıklayın** (veya iki parmakla dokunun), **`Aç`** seçeneğini seçin ve çıkan uyarıda tekrar **`Aç`** butonuna basın. (veya Terminal'de klasöre gidip `chmod +x GameTranslator.command` yazmanız yeterlidir).
-   * **"swiftc komutu için geliştirici araçları gerekiyor" uyarısı verirse:**  
-     Apple'ın çıkan resmi penceresinde **`Yükle`** butonuna basın; Apple Command Line Tools ücretsiz ve otomatik olarak kurulur.
+#### 🟢 Yöntem A: Hazır Paketi İndirin ve Uygulamalar'a Taşıyın (En Hızlı & Önerilen)
+1. **Releases'ten İndirin:** [GitLab Releases](https://gitlab.com/sefflex/GameTranslator/-/releases/v1.0.0) sayfasından **`GameTranslator-macOS-v1.0.0.zip`** dosyasını indirin.
+2. **Uygulamalar Klasörüne Taşıyın:** İnen ZIP dosyasına çift tıklayarak açın. Çıkan **`GameTranslator.app`** dosyasını Mac'inizin **Uygulamalar (`/Applications`)** klasörüne sürükleyin.
+3. **Çift Tıklayıp Başlatın:** Uygulama doğrudan açılır; 5 adımlı yerel kurulum sihirbazı sizi karşılar ve her şeyi otomatik ayarlar!
+4. **⚠️ Mac Güvenlik İpuçları (İlk Kez Açarken):**
+   * **"Geliştirici doğrulanamadı" uyarısı çıkarsa:**  
+     Dosyaya **sağ tıklayın** (veya Control tuşuna basarak tıklayın) ➔ **`Aç`** deyin ve çıkan pencerede tekrar **`Aç`** butonuna basın. (Veya Terminal'de `xattr -cr /Applications/GameTranslator.app` yazmanız yeterlidir).
    * **Ekran Kaydı İzni (Altyazıyı Okumak İçin Şart):**  
-     Mac'inizde **`Sistem Ayarları` ➔ `Gizlilik ve Güvenlik` ➔ `Ekran ve Sistem Sesi Kaydı`** bölümüne gidin ve listede **`GameTranslator`** anahtarını **AÇIK (Mavi)** yapın.
+     Mac'inizde **`Sistem Ayarları` ➔ `Gizlilik ve Güvenlik` ➔ `Ekran ve Sistem Sesi Kaydı`** bölümünden **`GameTranslator`** anahtarına onay verin.
 
-#### 🛠️ Yöntem B: Manuel Olarak Kendiniz Derlemek İsterseniz (Terminal İle)
-Eğer uygulamayı terminalden kendi ellerinizle derleyip kurmak isterseniz:
-1. Mac'inizde **Terminal** uygulamasını açın (Klavyeden `Command + Boşluk` basıp Spotlight'a `Terminal` yazabilirsiniz).
-2. İndirdiğiniz proje klasörünün içine girin (Terminal penceresine `cd ` yazıp indirdiğiniz klasörü terminale sürükleyip Enter'a basabilirsiniz):
-   ```bash
-   cd /klasorun/yolu/GameTranslate-main
-   ```
-3. Derleme scriptini çalıştırın:
-   ```bash
-   bash mac/build.sh
-   ```
-4. Derleme bittiğinde terminalde `✅ Derleme ve kurulum başarıyla tamamlandı!` yazar ve uygulama otomatik olarak `/Applications/GameTranslator.app` konumuna yüklenir.
-5. Şimdi ister `GameTranslator.command` dosyasına çift tıklayarak, ister `Uygulamalar` (Applications) klasöründen **`GameTranslator`** ikonuna tıklayarak anında açabilirsiniz!
+#### 🛠️ Yöntem B: Kaynak Koddan Tek Tıkla Otomatik Başlatma (`GameTranslator.command`)
+Eğer kaynak kodları ZIP veya `git clone` ile indirdiyseniz:
+1. Klasörün içindeki **`GameTranslator.command`** dosyasına çift tıklayın.
+2. Sistem uygulamanın henüz derlenmediğini otomatik anlar, Apple Developer sertifikanızla imzalar, `/Applications/GameTranslator.app` olarak kurar ve arayüzü başlatır.
 
 ---
 
 ### 2. 🪟 PC (Windows Yerel Masaüstü Kurulumu - Windows 10 / 11)
 > C# / .NET 10, WPF ve DirectML / Windows Media OCR altyapısıyla çalışan yerel, donanım hızlandırmalı Windows masaüstü uygulamasıdır.  
-> 💡 **Hızlı İndirme:** [GitHub Releases](https://github.com/Sefflex/GameTranslator/releases/latest) sayfasından hazır kurulum sihirbazını (**`GameTranslator-Setup-v1.0.0.exe`**) veya tüm paketi içeren **`GameTranslator-Windows-v1.0.0.zip`** dosyasını indirebilirsiniz.
+> 💡 **Hızlı İndirme:** [GitLab Sürümler (Releases)](https://gitlab.com/sefflex/GameTranslator/-/releases/v1.0.0) sayfasından hazır kurulum sihirbazını (**`GameTranslator-Setup-v1.0.0.exe`**) veya taşınabilir paketi (**`GameTranslator-Windows-v1.0.0.zip`**) indirebilirsiniz.
 
 #### 🟢 Yöntem A: Hazır Kurulum Sihirbazı ile Tek Tıkla Kurulum (Önerilen)
-1. **GitHub Releases'ten İndirin:** [GitHub Releases](https://github.com/Sefflex/GameTranslator/releases/latest) bölümünden **`GameTranslator-Setup-v1.0.0.exe`** dosyasını (veya tüm paketi içeren `GameTranslator-Windows-v1.0.0.zip` arşivini) indirin.
+1. **Releases'ten İndirin:** [GitLab Releases](https://gitlab.com/sefflex/GameTranslator/-/releases/v1.0.0) bölümünden **`GameTranslator-Setup-v1.0.0.exe`** dosyasını indirin.
 2. **Kurulum Sihirbazını Çalıştırın:** **`GameTranslator-Setup-v1.0.0.exe`** dosyasına çift tıklayın ve ekrandaki adımları takip ederek *"İleri > Kur"* butonuna basın.
    * *Neler Yapar:* Gerekli tüm bileşenleri ve Chiaki motorunu güvenli uygulama dizinine kurar, Windows güvenlik izinlerini otomatik ayarlar.
    * *Kısayollar:* Masaüstünüze ve Başlat Menünüze şık `GameTranslator` ikonunu bırakır.
    * *Kaldırma (Uninstall):* İstenildiği zaman Windows *Ayarlar › Yüklü Uygulamalar* (Program Ekle/Kaldır) bölümünden veya kurulu dizindeki `unins000.exe` ile tek tıkla sistemden tertemiz kaldırılabilir.
 3. **📦 Taşınabilir (Portable / Kurulumsuz) Seçenek:**
-   * Bilgisayarına hiçbir şey kurmak istemeyenler `GameTranslator-Windows-x64-v1.0.0.zip` arşivini herhangi bir klasöre çıkartıp içindeki **`GameTranslator.exe`** dosyasına çift tıklayarak doğrudan çalıştırabilir!
+   * Bilgisayarına hiçbir şey kurmak istemeyenler [GitLab Releases](https://gitlab.com/sefflex/GameTranslator/-/releases/v1.0.0) sayfasından **`GameTranslator-Windows-v1.0.0.zip`** arşivini indirip herhangi bir klasöre çıkartabilir ve içindeki **`GameTranslator.exe`** dosyasına çift tıklayarak doğrudan çalıştırabilir!
 4. **⚠️ Windows Güvenlik İpuçları (İlk Kez Açarken):**
    * **Windows Defender "Windows kişisel bilgisayarınızı korudu" (SmartScreen) derse:**  
      Mavi penceredeki **`Ek bilgi`** yazısına tıklayın, ardından altta açılan **`Yine de çalıştır`** butonuna basın. (Açık kaynaklı ve dijital imza sertifikası satın alınmamış yeni bağımsız projelerde standarttır, %100 güvenlidir).
