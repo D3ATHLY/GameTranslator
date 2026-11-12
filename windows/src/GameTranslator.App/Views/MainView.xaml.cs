@@ -85,7 +85,7 @@ public partial class MainView : UserControl
         BottomPercentLabel.Text = $"%{Math.Round(BottomPercentSlider.Value)}";
 
         // Renk
-        selectedColor = s.Style.Color ?? "#FFFFFF";
+        selectedColor = s.Style.TextColor == SubtitleTextColor.Yellow ? "#FFE600" : "#FFFFFF";
         UpdateColorSelection();
 
         // Kırpma Alanı (CropRegion)
@@ -126,6 +126,26 @@ public partial class MainView : UserControl
         }
 
         ObsText.Text = $"OBS overlay: http://localhost:{controller.ServerPort}/obs";
+
+        // Video Giriş Kaynağı (Remote Play / Capture Card / Desktop)
+        if (s.VideoSource == VideoSourceType.CaptureCard)
+        {
+            SourceRadioCaptureCard.IsChecked = true;
+            SourceWindowPickerCard.Visibility = Visibility.Visible;
+            PopulateSourceWindows();
+        }
+        else if (s.VideoSource == VideoSourceType.DesktopScreen)
+        {
+            SourceRadioDesktop.IsChecked = true;
+            SourceWindowPickerCard.Visibility = Visibility.Visible;
+            PopulateSourceWindows();
+        }
+        else
+        {
+            SourceRadioRemotePlay.IsChecked = true;
+            SourceWindowPickerCard.Visibility = Visibility.Collapsed;
+        }
+
         loading = false;
     }
 
@@ -210,7 +230,6 @@ public partial class MainView : UserControl
                 StreamPlaceholder.Visibility = Visibility.Visible;
                 if (StreamPlaceholderTitle != null) StreamPlaceholderTitle.Text = "PS5 Canlı Akışı Başlatılmadı";
                 if (StreamPlaceholderSubtitle != null) StreamPlaceholderSubtitle.Text = "PS5 ekranını canlı görmek için sol menüden '▶ Çeviriyi Başlat'a basın.";
-                if (BtnLaunchChiaki != null) BtnLaunchChiaki.Visibility = Visibility.Collapsed;
             }
             if (ThumbnailPlaceholder != null) ThumbnailPlaceholder.Visibility = Visibility.Visible;
         }
@@ -220,8 +239,7 @@ public partial class MainView : UserControl
             {
                 StreamPlaceholder.Visibility = Visibility.Visible;
                 if (StreamPlaceholderTitle != null) StreamPlaceholderTitle.Text = "PS5 Canlı Yayını Bekleniyor...";
-                if (StreamPlaceholderSubtitle != null) StreamPlaceholderSubtitle.Text = "Lütfen Chiaki veya PS Remote Play üzerinden PS5'inize bağlanın.\nKonsol bağlandığında görüntü otomatik buraya yansıyacaktır.";
-                if (BtnLaunchChiaki != null) BtnLaunchChiaki.Visibility = Visibility.Visible;
+                if (StreamPlaceholderSubtitle != null) StreamPlaceholderSubtitle.Text = "PS5 konsolunuza bağlanılıyor, görüntü otomatik olarak buraya yansıyacaktır.";
             }
         }
     }
@@ -260,12 +278,15 @@ public partial class MainView : UserControl
         {
             if (controller.Console == null || controller.Tv == null)
             {
-                // Eğer konsol henüz sihirbazdan eşleştirilmediyse varsayılan PS5 bağlantısını tanımla
+                // Eğer konsol henüz eşleştirilmediyse kayıtlı yapılandırmayı kontrol et
                 if (controller.Console == null)
                 {
-                    var host = "192.168.1.109";
-                    var nick = ChiakiLauncher.GetRegisteredNickname(host) ?? "PS5";
-                    controller.SetRegisteredConsole(new RegisteredConsole(host, nick, controller.AccountId ?? System.Text.Encoding.ASCII.GetBytes("GTPS5ACC"), new byte[16]));
+                    var savedHost = ChiakiLauncher.GetSavedHost();
+                    if (!string.IsNullOrWhiteSpace(savedHost))
+                    {
+                        var nick = ChiakiLauncher.GetRegisteredNickname(savedHost) ?? "PS5";
+                        controller.SetRegisteredConsole(new RegisteredConsole(savedHost, nick, controller.AccountId ?? new byte[16], new byte[16]));
+                    }
                 }
 
                 // TV henüz seçilmediyse varsayılan Bilgisayar & OBS ekran modunu etkinleştir
@@ -286,6 +307,7 @@ public partial class MainView : UserControl
 
     private void OnTabChanged(object sender, RoutedEventArgs e)
     {
+        if (loading) return;
         if (PanelOcrArea == null || PanelDisplay == null || PanelModels == null || PanelSystem == null || PanelGuide == null) return;
 
         PanelOcrArea.Visibility = TabOcrArea.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
@@ -379,7 +401,7 @@ public partial class MainView : UserControl
 
     private void UpdateOcrBox()
     {
-        if (OcrCanvas == null || OcrBoxBorder == null) return;
+        if (OcrCanvas == null || OcrBoxBorder == null || CropTopSlider == null || CropBottomSlider == null || CropLeftSlider == null || CropRightSlider == null) return;
         var w = OcrCanvas.ActualWidth;
         var h = OcrCanvas.ActualHeight;
         if (w <= 10 || h <= 10)
@@ -403,10 +425,10 @@ public partial class MainView : UserControl
         OcrBoxBorder.Width = boxW;
         OcrBoxBorder.Height = boxH;
 
-        CropTopLabel.Text = $"%{Math.Round(top * 100)}";
-        CropBottomLabel.Text = $"%{Math.Round(bottom * 100)}";
-        CropLeftLabel.Text = $"%{Math.Round(left * 100)}";
-        CropRightLabel.Text = $"%{Math.Round(right * 100)}";
+        if (CropTopLabel != null) CropTopLabel.Text = $"%{Math.Round(top * 100)}";
+        if (CropBottomLabel != null) CropBottomLabel.Text = $"%{Math.Round(bottom * 100)}";
+        if (CropLeftLabel != null) CropLeftLabel.Text = $"%{Math.Round(left * 100)}";
+        if (CropRightLabel != null) CropRightLabel.Text = $"%{Math.Round(right * 100)}";
     }
 
     private void OnLaunchChiakiManual(object sender, RoutedEventArgs e)
@@ -477,9 +499,10 @@ public partial class MainView : UserControl
         selectedColor = hex;
         UpdateColorSelection();
 
+        var textColor = hex == "#FFE600" ? SubtitleTextColor.Yellow : SubtitleTextColor.White;
         controller.Settings = controller.Settings with
         {
-            Style = controller.Settings.Style with { Color = hex }
+            Style = controller.Settings.Style with { TextColor = textColor }
         };
         controller.SyncStyle();
         UpdateTvPreview();
@@ -581,7 +604,7 @@ public partial class MainView : UserControl
 
     private void UpdateTvPreview()
     {
-        if (TvPreviewSubtitleText == null || TvPreviewSubtitleBox == null) return;
+        if (TvPreviewSubtitleText == null || TvPreviewSubtitleBox == null || TextSizeSlider == null || BoldCheck == null || BackgroundSlider == null || BottomPercentSlider == null) return;
         try
         {
             var converter = new BrushConverter();
@@ -693,5 +716,77 @@ public partial class MainView : UserControl
     private void OnHyperlink(object sender, RequestNavigateEventArgs e)
     {
         Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true });
+    }
+
+    // --- Video Giriş Kaynağı (Remote Play, Capture Card, Masaüstü/OBS) ---
+
+    private void OnVideoSourceChanged(object sender, RoutedEventArgs e)
+    {
+        if (loading) return;
+
+        VideoSourceType newSource;
+        if (SourceRadioCaptureCard.IsChecked == true)
+        {
+            newSource = VideoSourceType.CaptureCard;
+            SourceWindowPickerCard.Visibility = Visibility.Visible;
+            PopulateSourceWindows();
+        }
+        else if (SourceRadioDesktop.IsChecked == true)
+        {
+            newSource = VideoSourceType.DesktopScreen;
+            SourceWindowPickerCard.Visibility = Visibility.Visible;
+            PopulateSourceWindows();
+        }
+        else
+        {
+            newSource = VideoSourceType.RemotePlay;
+            SourceWindowPickerCard.Visibility = Visibility.Collapsed;
+        }
+
+        controller.Settings = controller.Settings with { VideoSource = newSource };
+    }
+
+    private void OnRefreshWindows(object sender, RoutedEventArgs e)
+    {
+        PopulateSourceWindows();
+    }
+
+    private void PopulateSourceWindows()
+    {
+        try
+        {
+            var titles = WindowCaptureService.GetTopLevelWindowTitles();
+            SourceWindowComboBox.Items.Clear();
+
+            var desktopItem = new ComboBoxItem { Content = "🖥️ Tüm Masaüstü / Ana Ekran (Varsayılan)", Tag = "" };
+            SourceWindowComboBox.Items.Add(desktopItem);
+
+            ComboBoxItem? toSelect = desktopItem;
+            var currentTarget = controller.Settings.DesktopWindowName;
+
+            foreach (var title in titles)
+            {
+                var item = new ComboBoxItem { Content = $"🪟 {title}", Tag = title };
+                SourceWindowComboBox.Items.Add(item);
+
+                if (!string.IsNullOrEmpty(currentTarget) && title.Contains(currentTarget, StringComparison.OrdinalIgnoreCase))
+                {
+                    toSelect = item;
+                }
+            }
+
+            SourceWindowComboBox.SelectedItem = toSelect;
+        }
+        catch { }
+    }
+
+    private void OnSourceWindowSelected(object sender, SelectionChangedEventArgs e)
+    {
+        if (loading) return;
+        if (SourceWindowComboBox.SelectedItem is ComboBoxItem item)
+        {
+            var target = (item.Tag as string) ?? string.Empty;
+            controller.Settings = controller.Settings with { DesktopWindowName = target };
+        }
     }
 }

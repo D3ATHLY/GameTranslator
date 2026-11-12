@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 using System.Security.Cryptography;
 using GameTranslator.Core.LgTv;
@@ -7,13 +7,13 @@ using Xunit;
 namespace GameTranslator.Core.Tests;
 
 /// <summary>
-/// Gerçek SSH sunucusuyla denemeler için GAMETRANSLATOR_TEST_SSH="host:port:kullanıcı:anahtar-dosyası" verilir; sunucu LG
+/// Gerçek SSH sunucusuyla denemeler için GameTranslator_TEST_SSH="host:port:kullanıcı:anahtar-dosyası" verilir; sunucu LG
 /// geliştirici modu gibi yalnız ssh-rsa kabul edecek biçimde kurulabilir. Verilmezse yalnız bağlantısız denemeler çalışır.
 /// </summary>
 public class SshNetShellTests
 {
     private static (string Host, int Port, string User, string Key)? Server =>
-        Environment.GetEnvironmentVariable("GAMETRANSLATOR_TEST_SSH")?.Split(':', 4) is [var host, var port, var user, var key]
+        Environment.GetEnvironmentVariable("GameTranslator_TEST_SSH")?.Split(':', 4) is [var host, var port, var user, var key]
             ? (host, int.Parse(port), user, key)
             : null;
 
@@ -72,7 +72,7 @@ public class SshNetShellTests
         if (Server is not var (host, port, user, key)) return;
         var package = Path.GetTempFileName();
         await File.WriteAllBytesAsync(package, RandomNumberGenerator.GetBytes(300_000));
-        var remote = $"/tmp/gametranslator-test-{Guid.NewGuid():N}";
+        var remote = $"/tmp/GameTranslator-test-{Guid.NewGuid():N}";
         try
         {
             var shell = new SshNetShell(host, port, key, user);
@@ -103,3 +103,4 @@ public class SshNetShellTests
         }
     }
 }
+

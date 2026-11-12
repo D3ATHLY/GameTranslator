@@ -48,6 +48,11 @@ public sealed record UserSettings
     }
     /// <summary>Anahtar girildiyse çeviri DeepL'le yapılır; kapalıysa ya da DeepL'e ulaşılamazsa cihaz üstü model.</summary>
     public bool OnlineTranslation { get; init; }
+    /// <summary>Görüntü kaynağı: Remote Play (Chiaki arkada gizli), Yakalama Kartı (Capture Card), Masaüstü / Ekran / OBS.</summary>
+    public VideoSourceType VideoSource { get; init; } = VideoSourceType.RemotePlay;
+    public string? CaptureCardDeviceName { get; init; }
+    public string? DesktopWindowName { get; init; }
+    public int ScreenIndex { get; init; } = 0;
 
     /// <summary>Ek bölgenin sayısı; <see cref="ExtraRegion"/> 1..ExtraRegionCount arasında çalışır.</summary>
     public const int ExtraRegionCount = 3;
@@ -77,6 +82,17 @@ public sealed record UserSettings
 
 /// <summary>Tek seferlik çevirinin sonucunun gösterileceği yer.</summary>
 public enum ResultTarget { Tv, Pc, Both }
+
+/// <summary>Görüntünün alınacağı video giriş kaynağı.</summary>
+public enum VideoSourceType
+{
+    /// <summary>PlayStation 5 Remote Play (Arka planda gizli oturum).</summary>
+    RemotePlay = 0,
+    /// <summary>HDMI Video Yakalama Kartı (Elgato, Cam Link, USB Video Capture).</summary>
+    CaptureCard = 1,
+    /// <summary>Masaüstü / OBS Tam Ekran / Pencere Yakalama.</summary>
+    DesktopScreen = 2
+}
 
 /// <summary>Hesap kimliği, PS5 ve TV anahtarları (gerçekte DPAPI ile şifreli dosya).</summary>
 public interface IAppStore
@@ -125,7 +141,7 @@ public interface IAppServices
     Task<IReadOnlyList<LgTv>> DiscoverTvsAsync();
     /// <summary>TV ile eşleşir ve TV uygulamasını sunucu adresiyle başlatmayı dener.</summary>
     Task<TvPairing> PairTvAsync(LgTv tv, string? key, string server);
-    IStreamSession MakeStream(RegisteredConsole console, byte[] accountId);
+    IStreamSession MakeStream(RegisteredConsole? console, byte[]? accountId, UserSettings? settings = null);
     /// <param name="appConnected">TV uygulaması bilgisayara bağlı mı (Samsung'da bağlıyken TV'ye dokunulmaz).</param>
     /// <param name="onMoved">TV ağda yeni bir adreste bulununca çağrılır.</param>
     IKeeper MakeKeeper(LgTv tv, string? key, IReadOnlyDictionary<string, string> parameters, Func<bool> appConnected, Action<LgTv> onMoved);

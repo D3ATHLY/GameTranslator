@@ -27,8 +27,12 @@ public partial class ShellWindow : Window
         // Num 0, 1, 2, 3, 5, 8, 9 kısayolları yalnız çeviri sürerken tutulur.
         SourceInitialized += (_, _) =>
         {
-            hotkeys = new GlobalHotkeys(new WindowInteropHelper(this).Handle, OnHotkey);
-            hotkeys.Enabled = controller.IsRunning;
+            try
+            {
+                hotkeys = new GlobalHotkeys(new WindowInteropHelper(this).Handle, OnHotkey);
+                hotkeys.Enabled = controller.IsRunning;
+            }
+            catch { }
         };
         // Bilgisayarda gösterilecek çeviriler küçük, üstte duran bir kutuda çıkar.
         controller.PcResultReady += PcResultWindow.Display;

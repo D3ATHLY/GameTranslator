@@ -39,8 +39,7 @@ public partial class OnboardingView : UserControl
         }
         else
         {
-            selectedTvPlatform = "LG";
-            _ = controller.PairAsync(new LgTv("LG webOS TV", "192.168.1.50", TvBrand.Lg));
+            selectedTvPlatform = "PC";
         }
         InitializeComponent();
         UpdateTvPlatformSelection();
@@ -83,7 +82,7 @@ public partial class OnboardingView : UserControl
             if (PairStatusText != null)
             {
                 var savedHost = ChiakiLauncher.GetSavedHost();
-                if (!string.IsNullOrWhiteSpace(savedHost) && Ps5HostInput != null)
+                if (!string.IsNullOrWhiteSpace(savedHost) && Ps5HostInput != null && string.IsNullOrWhiteSpace(Ps5HostInput.Text))
                 {
                     Ps5HostInput.Text = savedHost;
                 }
@@ -91,8 +90,13 @@ public partial class OnboardingView : UserControl
                 var host = controller.Console?.Host ?? Ps5HostInput?.Text?.Trim();
                 if (!string.IsNullOrWhiteSpace(host) && ChiakiLauncher.IsRegistered(host))
                 {
-                    PairStatusText.Text = "✓ PS5 Konsolu Chiaki'de zaten eşleşmiş durumda! Doğrudan sonraki adıma geçebilirsiniz.";
+                    PairStatusText.Text = $"✓ PS5 Konsolu zaten eşleşmiş durumda ({host})! Dilerseniz doğrudan sonraki adıma geçebilirsiniz.";
                     PairStatusText.Foreground = new SolidColorBrush(Color.FromRgb(16, 185, 129));
+                }
+                else if (string.IsNullOrWhiteSpace(Ps5HostInput?.Text))
+                {
+                    // Otomatik ağda tara
+                    OnScanPs5(this, new RoutedEventArgs());
                 }
             }
         }
@@ -165,13 +169,19 @@ public partial class OnboardingView : UserControl
             switch (selectedTvPlatform)
             {
                 case "LG":
-                    _ = controller.PairAsync(new LgTv("LG webOS TV", string.IsNullOrWhiteSpace(LgHostInput.Text) ? "192.168.1.50" : LgHostInput.Text.Trim(), TvBrand.Lg));
+                    var lgHost = string.IsNullOrWhiteSpace(LgHostInput?.Text) ? controller.Tv?.Host : LgHostInput.Text.Trim();
+                    if (!string.IsNullOrWhiteSpace(lgHost))
+                        _ = controller.PairAsync(new LgTv("LG webOS TV", lgHost, TvBrand.Lg));
                     break;
                 case "Samsung":
-                    _ = controller.PairAsync(new LgTv("Samsung Smart TV", string.IsNullOrWhiteSpace(SamsungHostInput.Text) ? "192.168.1.50" : SamsungHostInput.Text.Trim(), TvBrand.Samsung));
+                    var samHost = string.IsNullOrWhiteSpace(SamsungHostInput?.Text) ? controller.Tv?.Host : SamsungHostInput.Text.Trim();
+                    if (!string.IsNullOrWhiteSpace(samHost))
+                        _ = controller.PairAsync(new LgTv("Samsung Smart TV", samHost, TvBrand.Samsung));
                     break;
                 case "Android":
-                    _ = controller.PairAsync(new LgTv("Android TV", string.IsNullOrWhiteSpace(AndroidHostInput.Text) ? "192.168.1.50" : AndroidHostInput.Text.Trim(), TvBrand.AndroidTv));
+                    var andHost = string.IsNullOrWhiteSpace(AndroidHostInput?.Text) ? controller.Tv?.Host : AndroidHostInput.Text.Trim();
+                    if (!string.IsNullOrWhiteSpace(andHost))
+                        _ = controller.PairAsync(new LgTv("Android TV", andHost, TvBrand.AndroidTv));
                     break;
                 case "PC":
                 default:
@@ -190,26 +200,28 @@ public partial class OnboardingView : UserControl
     // ==========================================
     // Adım 2: PSN Girişi
     // ==========================================
-    private void OnCopyPsnId(object sender, RoutedEventArgs e)
+    private void OnToggleManualPsnCode(object sender, RoutedEventArgs e)
     {
-        if (PsnIdDisplay != null && !string.IsNullOrWhiteSpace(PsnIdDisplay.Text))
+        if (ManualPsnCard != null)
         {
-            Clipboard.SetText(PsnIdDisplay.Text.Trim());
-            MessageBox.Show("Chiaki PSN Hesap Kodu panoya kopyalandı!\n\nChiaki'de konsolu kaydederken 'PSN Account-ID' kutusuna yapıştırabilirsiniz.", "Kopyalandı", MessageBoxButton.OK, MessageBoxImage.Information);
+            ManualPsnCard.Visibility = ManualPsnCard.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
         }
     }
 
     private void UpdatePsnIdDisplay()
     {
         var b64 = controller.AccountIdBase64;
-        if (!string.IsNullOrWhiteSpace(b64) && PsnIdDisplay != null && PsnIdCard != null)
+        if (!string.IsNullOrWhiteSpace(b64))
         {
-            PsnIdDisplay.Text = b64;
-            PsnIdCard.Visibility = Visibility.Visible;
             if (PsnStatusText != null)
             {
                 PsnStatusText.Text = "✓ PlayStation Network hesabı başarıyla bağlandı!";
                 PsnStatusText.Foreground = new SolidColorBrush(Color.FromRgb(16, 185, 129));
+            }
+            if (PsnSignInButton != null)
+            {
+                PsnSignInButton.Content = "✓ PSN Hesabı Bağlı (Değiştir)";
+                PsnSignInButton.Background = new SolidColorBrush(Color.FromRgb(16, 185, 129));
             }
         }
     }
@@ -380,10 +392,11 @@ public partial class OnboardingView : UserControl
 
         try
         {
-            ChiakiLauncher.SyncConfig(host);
+            var accountId = controller.AccountId;
+            ChiakiLauncher.SyncConfig(host, accountId);
             await controller.RegisterAsync(host, digits);
 
-            PairStatusText.Text = $"✓ PS5 Konsolu Başarıyla Eşleşti! ({host})";
+            PairStatusText.Text = $"✓ PS5 Konsolu Başarıyla Eşleşti! ({host}) TV kurulum adımına geçiliyor...";
             PairStatusText.Foreground = new SolidColorBrush(Color.FromRgb(16, 185, 129));
             PairButton.Content = "✓ Eşleşti!";
 
@@ -399,16 +412,26 @@ public partial class OnboardingView : UserControl
         }
     }
 
-    private void OnOpenChiakiPairingGui(object sender, RoutedEventArgs e)
+    private void OnSkipPs5ForCaptureCard(object sender, RoutedEventArgs e)
     {
-        var host = string.IsNullOrWhiteSpace(Ps5HostInput?.Text) ? "192.168.1.109" : Ps5HostInput.Text.Trim();
-        var accountId = controller.AccountId;
-        ChiakiLauncher.SyncConfig(host, accountId);
-        ChiakiLauncher.LaunchPairingGui(host);
-        var registered = new RegisteredConsole(host, "PS5", accountId ?? System.Text.Encoding.ASCII.GetBytes("GTPS5ACC"), new byte[16]);
-        controller.SetRegisteredConsole(registered);
-        PairStatusText.Text = "Chiaki eşleştirme arayüzü açıldı. PS5 konsolunuza tıklayarak yukarıdaki PSN kodunu ve TV'deki PIN'i girip eşleştirebilirsiniz.";
-        PairStatusText.Foreground = new SolidColorBrush(Color.FromRgb(56, 189, 248));
+        try
+        {
+            // Yakalama kartı veya OBS modu seçildiğinde ayarları güncelle
+            controller.Settings = controller.Settings with { VideoSource = VideoSourceType.CaptureCard };
+
+            // Eğer konsol henüz kayıtlı değilse sahte bir kayıt oluşturarak sonraki adımların bloklanmasını engelle
+            if (controller.Console == null)
+            {
+                var mockKey = new byte[16];
+                var mockConsole = new RegisteredConsole("127.0.0.1", "Yakalama Kartı / OBS", mockKey, mockKey);
+                controller.SetRegisteredConsole(mockConsole);
+            }
+        }
+        catch { }
+
+        PairStatusText.Text = "✓ Yakalama Kartı / OBS modu etkinleştirildi. TV adımına geçiliyor...";
+        PairStatusText.Foreground = new SolidColorBrush(Color.FromRgb(16, 185, 129));
+        SetStep(3);
     }
 
     // ==========================================
@@ -433,8 +456,9 @@ public partial class OnboardingView : UserControl
         UpdateTvPlatformSelection();
         try
         {
-            var host = string.IsNullOrWhiteSpace(SamsungHostInput.Text) ? "192.168.1.50" : SamsungHostInput.Text.Trim();
-            await controller.PairAsync(new LgTv("Samsung Smart TV", host, TvBrand.Samsung));
+            var host = string.IsNullOrWhiteSpace(SamsungHostInput?.Text) ? controller.Tv?.Host : SamsungHostInput.Text.Trim();
+            if (!string.IsNullOrWhiteSpace(host))
+                await controller.PairAsync(new LgTv("Samsung Smart TV", host, TvBrand.Samsung));
             TvStatusFeedback.Text = "✓ Samsung Smart TV modu seçildi.";
             TvStatusFeedback.Foreground = new SolidColorBrush(Color.FromRgb(16, 185, 129));
         }
@@ -447,8 +471,9 @@ public partial class OnboardingView : UserControl
         UpdateTvPlatformSelection();
         try
         {
-            var host = string.IsNullOrWhiteSpace(LgHostInput.Text) ? "192.168.1.50" : LgHostInput.Text.Trim();
-            await controller.PairAsync(new LgTv("LG webOS TV", host, TvBrand.Lg));
+            var host = string.IsNullOrWhiteSpace(LgHostInput?.Text) ? controller.Tv?.Host : LgHostInput.Text.Trim();
+            if (!string.IsNullOrWhiteSpace(host))
+                await controller.PairAsync(new LgTv("LG webOS TV", host, TvBrand.Lg));
             TvStatusFeedback.Text = "✓ LG webOS TV modu seçildi.";
             TvStatusFeedback.Foreground = new SolidColorBrush(Color.FromRgb(16, 185, 129));
         }
@@ -461,8 +486,9 @@ public partial class OnboardingView : UserControl
         UpdateTvPlatformSelection();
         try
         {
-            var host = string.IsNullOrWhiteSpace(AndroidHostInput.Text) ? "192.168.1.50" : AndroidHostInput.Text.Trim();
-            await controller.PairAsync(new LgTv("Android TV", host, TvBrand.AndroidTv));
+            var host = string.IsNullOrWhiteSpace(AndroidHostInput?.Text) ? controller.Tv?.Host : AndroidHostInput.Text.Trim();
+            if (!string.IsNullOrWhiteSpace(host))
+                await controller.PairAsync(new LgTv("Android TV", host, TvBrand.AndroidTv));
             TvStatusFeedback.Text = "✓ Android TV modu seçildi.";
             TvStatusFeedback.Foreground = new SolidColorBrush(Color.FromRgb(16, 185, 129));
         }

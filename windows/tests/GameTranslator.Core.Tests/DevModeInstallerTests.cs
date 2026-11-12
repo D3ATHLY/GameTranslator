@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 using GameTranslator.Core.LgTv;
 using Xunit;
@@ -23,7 +23,7 @@ public class DevModeInstallerTests
     /// <summary>10 baytlık geçici paket; kurulum TV'deki boyutu bununla karşılaştırır.</summary>
     private static string Package()
     {
-        var file = Path.Combine(Path.GetTempPath(), $"gametranslator-test-{Guid.NewGuid():N}.ipk");
+        var file = Path.Combine(Path.GetTempPath(), $"GameTranslator-test-{Guid.NewGuid():N}.ipk");
         File.WriteAllBytes(file, new byte[10]);
         return file;
     }
@@ -34,9 +34,26 @@ public class DevModeInstallerTests
     private static bool IsInstall(string line) => line.Contains("appInstallService");
 
     [Fact]
+    public async Task KeyFileIsOnlyReadableByTheOwner()
+    {
+        var file = Path.Combine(Path.GetTempPath(), $"GameTranslator-test-{Guid.NewGuid():N}");
+        try
+        {
+            await DevModeInstaller.WritePrivateAsync(file, [1, 2, 3]);
+            Assert.Equal([1, 2, 3], await File.ReadAllBytesAsync(file));
+            if (!OperatingSystem.IsWindows())
+                Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(file));
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
+    [Fact]
     public void VersionIsReadFromThePackageName()
     {
-        Assert.Equal("0.6.1", DevModeInstaller.VersionOfPackage("com.gametranslator.tv_0.6.1_all.ipk"));
+        Assert.Equal("0.6.1", DevModeInstaller.VersionOfPackage("com.GameTranslator.tv_0.6.1_all.ipk"));
         Assert.Null(DevModeInstaller.VersionOfPackage("notes.txt"));
     }
 
@@ -90,7 +107,7 @@ public class DevModeInstallerTests
         Assert.Equal(package, shell.Calls[0].Input);
         // ares-install gibi: paket kendi adıyla yüklenir, eski GameTranslator paketleri önce silinir.
         Assert.Contains($"cat > '{remote}'", shell.Calls[0].Command);
-        Assert.Contains("rm -f /media/developer/temp/com.gametranslator.tv_*.ipk", shell.Calls[0].Command);
+        Assert.Contains("rm -f /media/developer/temp/com.GameTranslator.tv_*.ipk", shell.Calls[0].Command);
         Assert.Contains($"wc -c < '{remote}'", shell.Calls[1].Command);
         Assert.Contains("luna://com.webos.appInstallService/dev/install", shell.Calls[2].Command);
         Assert.Contains($"\"ipkUrl\":\"{remote}\"", shell.Calls[2].Command);
@@ -101,11 +118,11 @@ public class DevModeInstallerTests
     [Fact]
     public void InstallCommandKeepsTheSubscriptionOpenUntilTheTvAnswers()
     {
-        var command = DevModeInstaller.InstallCommand("/media/developer/temp/com.gametranslator.tv_0.9.6_all.ipk", 180);
+        var command = DevModeInstaller.InstallCommand("/media/developer/temp/com.GameTranslator.tv_0.9.6_all.ipk", 180);
         // -n 1 ilk yanıttan sonra aboneliği kapatıyordu; ares-install -i kullanır ve sonucu bekler.
         Assert.DoesNotContain("-n 1", command);
         Assert.Contains("/usr/bin/luna-send-pub -i 'luna://com.webos.appInstallService/dev/install'", command);
-        Assert.Contains("{\"id\":\"com.ares.defaultName\",\"ipkUrl\":\"/media/developer/temp/com.gametranslator.tv_0.9.6_all.ipk\",\"subscribe\":true}", command);
+        Assert.Contains("{\"id\":\"com.ares.defaultName\",\"ipkUrl\":\"/media/developer/temp/com.GameTranslator.tv_0.9.6_all.ipk\",\"subscribe\":true}", command);
         Assert.Contains("while [ $i -lt 180 ]", command);
         Assert.Contains("sleep 210 </dev/null 2>/dev/null |", command);
         Assert.Contains("kill $L", command);
@@ -144,7 +161,7 @@ public class DevModeInstallerTests
         var error = await Assert.ThrowsAsync<DevModeException>(() => Installer(shell).InstallAsync(Package(), "0.6.1"));
         Assert.Equal(DevModeError.InstallFailed, error.Error);
         Assert.Equal("Invalid package", error.Detail);
-        Assert.Contains("rm -f '/media/developer/temp/gametranslator-test-", shell.Calls[^1].Command);
+        Assert.Contains("rm -f '/media/developer/temp/GameTranslator-test-", shell.Calls[^1].Command);
         Assert.DoesNotContain(shell.Calls, call => call.Command.Contains("appinfo.json"));
     }
 
@@ -174,7 +191,7 @@ public class DevModeInstallerTests
                 : line.Contains("appinfo.json") ? new CommandResult(0, "\"version\": \"0.6.1\"") : null,
         };
         await Installer(shell).InstallAsync(Package(), "0.6.1");
-        Assert.Contains("rm -f '/media/developer/temp/gametranslator-test-", shell.Calls[^1].Command);
+        Assert.Contains("rm -f '/media/developer/temp/GameTranslator-test-", shell.Calls[^1].Command);
     }
 
     [Fact]
@@ -231,3 +248,4 @@ public class DevModeInstallerTests
         }
     }
 }
+

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -82,3 +82,4 @@ internal static partial class ChildProcessGuard
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool AssignProcessToJobObject(nint job, nint process);
 }
+

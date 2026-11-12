@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
@@ -27,6 +27,16 @@ internal sealed class OnnxMarianEngine : ISentenceEngine
     /// </summary>
     public const int DefaultBeams = 4;
 
+    /// <summary>
+    /// Çevirinin en çok kullanacağı iş parçacığı. Aynı anda yazı tanıma ve görüntü çözme de çalışıyor; çeviri bütün
+    /// çekirdekleri alırsa okuma yavaşlar. ProcessorCount mantıksal çekirdek sayar (16 iş parçacıklı dizüstünde yarısı 8
+    /// ederdi); altyazı cümlesi kısa olduğundan 2 iş parçacığı yeter.
+    /// </summary>
+    public const int MaxIntraOpThreads = 2;
+
+    /// <summary>Çekirdek sayısının yarısı, en az 1 en çok <see cref="MaxIntraOpThreads"/>.</summary>
+    internal static int IntraOpThreads(int processorCount) => Math.Clamp(processorCount / 2, 1, MaxIntraOpThreads);
+
     private readonly MarianTokenizer _tokenizer;
     private readonly InferenceSession _encoder;
     private readonly InferenceSession _decoder;
@@ -49,6 +59,8 @@ internal sealed class OnnxMarianEngine : ISentenceEngine
         {
             GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL,
             ExecutionMode = ExecutionMode.ORT_SEQUENTIAL,
+            IntraOpNumThreads = IntraOpThreads(Environment.ProcessorCount),
+            InterOpNumThreads = 1,
         };
         // Bellek havuzunu ya da ağırlık ön paketlemeyi kapatmak denendi: yüklemede bellek düşse de
         // çeviriler başladıktan sonra bellek artıyor, satır süresi de %20'ye kadar uzuyordu. Varsayılanlar kalır.
@@ -261,3 +273,4 @@ internal sealed class OnnxMarianEngine : ISentenceEngine
         _encoder.Dispose();
     }
 }
+

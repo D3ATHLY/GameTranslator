@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 using System.Text.Json.Nodes;
 using GameTranslator.Core.LgTv;
@@ -27,12 +27,12 @@ public class SsapMessagesTests
     [Fact]
     public void LaunchRequestCarriesAppIdAndParams()
     {
-        var payload = new JsonObject { ["id"] = "com.gametranslator.tv", ["params"] = new JsonObject { ["server"] = "http://1.2.3.4:8787" } };
+        var payload = new JsonObject { ["id"] = "com.GameTranslator.tv", ["params"] = new JsonObject { ["server"] = "http://1.2.3.4:8787" } };
         var message = JsonNode.Parse(SsapMessages.Request("7", "ssap://system.launcher/launch", payload))!;
         Assert.Equal("request", (string?)message["type"]);
         Assert.Equal("7", (string?)message["id"]);
         Assert.Equal("ssap://system.launcher/launch", (string?)message["uri"]);
-        Assert.Equal("com.gametranslator.tv", (string?)message["payload"]!["id"]);
+        Assert.Equal("com.GameTranslator.tv", (string?)message["payload"]!["id"]);
         Assert.Equal("http://1.2.3.4:8787", (string?)message["payload"]!["params"]!["server"]);
     }
 
@@ -44,3 +44,4 @@ public class SsapMessagesTests
         Assert.Null(LgDiscovery.HostFromSsdpResponse("HTTP/1.1 200 OK\r\nST: urn:other\r\n\r\n"));
     }
 }
+

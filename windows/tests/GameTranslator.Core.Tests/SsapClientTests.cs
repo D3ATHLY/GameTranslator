@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 using System.Net;
 using System.Net.Sockets;
@@ -109,9 +109,9 @@ public class SsapClientTests
         using var client = new SsapClient([new Uri($"ws://127.0.0.1:{tv.Port}")], null);
         Assert.Equal("fake-key", await client.ConnectAsync());
 
-        await client.LaunchAsync("com.gametranslator.tv", Server);
+        await client.LaunchAsync("com.GameTranslator.tv", Server);
         Assert.Equal("ssap://system.launcher/launch", tv.ReceivedUris.Last());
-        Assert.Equal("com.gametranslator.tv", (string?)tv.ReceivedPayloads.Last()!["id"]);
+        Assert.Equal("com.GameTranslator.tv", (string?)tv.ReceivedPayloads.Last()!["id"]);
         Assert.Equal("http://1.2.3.4:8787", (string?)tv.ReceivedPayloads.Last()!["params"]!["server"]);
     }
 
@@ -156,7 +156,7 @@ public class TvKeeperTests
         public Task<string> ForegroundAppIdAsync(CancellationToken cancellationToken = default)
         {
             if (FailNext) { FailNext = false; throw new IOException("bağlantı koptu"); }
-            return Task.FromResult(foreground.Count == 0 ? "com.gametranslator.tv" : foreground.Dequeue());
+            return Task.FromResult(foreground.Count == 0 ? "com.GameTranslator.tv" : foreground.Dequeue());
         }
 
         public Task LaunchAsync(string appId, IReadOnlyDictionary<string, string> parameters, CancellationToken cancellationToken = default)
@@ -175,7 +175,7 @@ public class TvKeeperTests
         var control = new FakeControl();
         var connected = false;
         var connects = 0;
-        var keeper = new TvKeeper(() => { connects++; return Task.FromResult<ITvControl>(control); }, "com.gametranslator.tv",
+        var keeper = new TvKeeper(() => { connects++; return Task.FromResult<ITvControl>(control); }, "com.GameTranslator.tv",
             new Dictionary<string, string>(), () => connected, TimeSpan.FromMilliseconds(200));
         await keeper.TickAsync(); // uygulama bağlı değil → aç ve bağlantıyı kapat
         Assert.Single(control.Launches);
@@ -194,14 +194,14 @@ public class TvKeeperTests
     [Fact]
     public async Task RelaunchesOnlyWhenHdmiInputIsInFront()
     {
-        var control = new FakeControl("com.gametranslator.tv", "com.webos.app.hdmi2", "com.gametranslator.tv", "netflix");
-        var keeper = new TvKeeper(() => Task.FromResult<ITvControl>(control), "com.gametranslator.tv", new Dictionary<string, string> { ["server"] = "http://1.2.3.4:8787" });
+        var control = new FakeControl("com.GameTranslator.tv", "com.webos.app.hdmi2", "com.GameTranslator.tv", "netflix");
+        var keeper = new TvKeeper(() => Task.FromResult<ITvControl>(control), "com.GameTranslator.tv", new Dictionary<string, string> { ["server"] = "http://1.2.3.4:8787" });
         await keeper.TickAsync(); // bağlanır ve uygulamayı bir kez başlatır
         await keeper.TickAsync(); // önde HDMI girişi → geri getir
         await keeper.TickAsync(); // önde bizimki
         await keeper.TickAsync(); // kullanıcı Netflix'i açtı → dokunma
         Assert.Equal(2, control.Launches.Count);
-        Assert.Equal("com.gametranslator.tv", control.Launches[^1].AppId);
+        Assert.Equal("com.GameTranslator.tv", control.Launches[^1].AppId);
         Assert.Equal("http://1.2.3.4:8787", control.Launches[^1].Params["server"]);
     }
 
@@ -215,7 +215,7 @@ public class TvKeeperTests
             attempts++;
             if (attempts == 1) throw new IOException("TV kapalı");
             return Task.FromResult<ITvControl>(control);
-        }, "com.gametranslator.tv", new Dictionary<string, string>());
+        }, "com.GameTranslator.tv", new Dictionary<string, string>());
         await keeper.TickAsync();
         Assert.Empty(control.Launches);
         await keeper.TickAsync(); // TV açıldı → bağlan ve başlat
@@ -228,3 +228,4 @@ public class TvKeeperTests
         Assert.Equal(2, control.Launches.Count);
     }
 }
+

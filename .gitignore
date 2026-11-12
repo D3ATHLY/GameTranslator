@@ -23,3 +23,9 @@ dotnet-install.ps1
 # IDE & Agent local settings
 .claude/
 .gemini/
+.appdata/
+.dotnet_cli/
+Releases/
+test_*.cs
+couchsubs*
+*.tmp

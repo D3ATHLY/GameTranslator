@@ -14,22 +14,34 @@ namespace GameTranslator.App.Services;
 internal sealed class Updater : IUpdater
 {
     private const string Repository = "https://github.com/Sefflex/GameTranslate";
-    private readonly UpdateManager manager = new(new GithubSource(Repository, null, false));
+    private readonly UpdateManager? manager;
     private UpdateInfo? pending;
 
-    public bool CanUpdateItself => manager.IsInstalled;
+    public Updater()
+    {
+        try
+        {
+            manager = new UpdateManager(new GithubSource(Repository, null, false));
+        }
+        catch
+        {
+            manager = null;
+        }
+    }
+
+    public bool CanUpdateItself => manager?.IsInstalled ?? false;
     public Uri DownloadPage { get; } = new($"{Repository}/releases/latest");
 
     public async Task<string?> CheckAsync()
     {
-        if (!manager.IsInstalled) return await LatestTagAsync();
+        if (manager == null || !manager.IsInstalled) return await LatestTagAsync();
         pending = await manager.CheckForUpdatesAsync();
         return pending?.TargetFullRelease.Version.ToString();
     }
 
     public async Task InstallAsync(IProgress<double> progress)
     {
-        if (pending is null) return;
+        if (manager == null || pending is null) return;
         await manager.DownloadUpdatesAsync(pending, percent => progress.Report(percent / 100.0));
         manager.ApplyUpdatesAndRestart(pending);
     }

@@ -63,6 +63,28 @@ internal static unsafe partial class NativeMethods
     private static readonly Lock InitLock = new();
     private static bool initialized;
 
+    static NativeMethods()
+    {
+        try
+        {
+            NativeLibrary.SetDllImportResolver(typeof(NativeMethods).Assembly, (libraryName, assembly, searchPath) =>
+            {
+                if (libraryName is "gametranslator_native" or "couchsubs_native")
+                {
+                    if (NativeLibrary.TryLoad("gametranslator_native", assembly, searchPath, out var handle)) return handle;
+                    if (NativeLibrary.TryLoad("couchsubs_native", assembly, searchPath, out handle)) return handle;
+                    var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                    var path1 = System.IO.Path.Combine(baseDir, "gametranslator_native.dll");
+                    if (System.IO.File.Exists(path1) && NativeLibrary.TryLoad(path1, out handle)) return handle;
+                    var path2 = System.IO.Path.Combine(baseDir, "couchsubs_native.dll");
+                    if (System.IO.File.Exists(path2) && NativeLibrary.TryLoad(path2, out handle)) return handle;
+                }
+                return IntPtr.Zero;
+            });
+        }
+        catch { }
+    }
+
     /// <summary>Ağ yığını ilk kullanımda bir kez hazırlanır. Kütüphane yoksa DllNotFoundException.</summary>
     internal static void EnsureInitialized()
     {
@@ -80,9 +102,30 @@ internal static unsafe partial class NativeMethods
     {
         get
         {
-            if (!NativeLibrary.TryLoad(Library, typeof(NativeMethods).Assembly, null, out var handle)) return false;
-            NativeLibrary.Free(handle);
-            return true;
+            if (NativeLibrary.TryLoad("gametranslator_native", typeof(NativeMethods).Assembly, null, out var handle))
+            {
+                NativeLibrary.Free(handle);
+                return true;
+            }
+            if (NativeLibrary.TryLoad("couchsubs_native", typeof(NativeMethods).Assembly, null, out handle))
+            {
+                NativeLibrary.Free(handle);
+                return true;
+            }
+            var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            var path1 = System.IO.Path.Combine(baseDir, "gametranslator_native.dll");
+            if (System.IO.File.Exists(path1) && NativeLibrary.TryLoad(path1, out handle))
+            {
+                NativeLibrary.Free(handle);
+                return true;
+            }
+            var path2 = System.IO.Path.Combine(baseDir, "couchsubs_native.dll");
+            if (System.IO.File.Exists(path2) && NativeLibrary.TryLoad(path2, out handle))
+            {
+                NativeLibrary.Free(handle);
+                return true;
+            }
+            return false;
         }
     }
 
@@ -110,8 +153,22 @@ internal static unsafe partial class NativeMethods
 /// <summary>libchiaki'nin günlük satırları (hata, uyarı, bilgi). Tanı için; kayıt ve oturum sırasında gelir.</summary>
 public static class RemotePlayLog
 {
+    /// <summary>Günlüğün yazıldığı dosya (uygulamadaki RemotePlayDiagnostics yazar).</summary>
+    public static string FilePath =>
+        System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "GameTranslator", "remoteplay.log");
+
+    /// <summary>Kullanıcıya hata iletisinde gösterilen yol (Dosya Gezgini'nin adres çubuğuna yazılabilir).</summary>
+    public const string DisplayPath = @"%LOCALAPPDATA%\GameTranslator\remoteplay.log";
+
     /// <summary>Yerel kütüphanenin iş parçacığında çağrılır; hızlı dönmeli.</summary>
     public static event Action<string>? MessageLogged;
+
+    /// <summary>Uygulamanın kendi satırı (eşleştirme sonucu, arama sonucu).</summary>
+    public static void Note(string message)
+    {
+        try { MessageLogged?.Invoke($"[gametranslator] {message}"); }
+        catch { /* günlük dinleyicisinin hatası çağıranı düşürmemeli */ }
+    }
 
     internal static void Write(int level, string? message)
     {

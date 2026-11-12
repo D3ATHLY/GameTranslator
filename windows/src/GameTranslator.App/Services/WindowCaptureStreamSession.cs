@@ -55,6 +55,9 @@ public sealed class WindowCaptureStreamSession : IStreamSession
                 var hWnd = WindowCaptureService.FindTargetWindow(out _);
                 if (hWnd != IntPtr.Zero)
                 {
+                    // Chiaki'yi ekrana fırlatmak yerine arka planda görünmez tut
+                    WindowCaptureService.MakeInvisibleBackground(hWnd);
+
                     var frame = WindowCaptureService.Capture(hWnd);
                     if (frame != null)
                     {

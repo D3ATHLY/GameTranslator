@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 using System.ComponentModel;
 using System.Diagnostics;
@@ -20,7 +20,7 @@ public interface ICommandRunner
 public enum DevModeError
 {
     Unreachable, KeyServerOff, WrongPassphrase, KeyRefused, InstallFailed, ToolMissing,
-    /// <summary>Samsung: TV Tizen 5.0'dan (2019) eski.</summary>
+    /// <summary>Samsung: TV Tizen 3.0'dan (2017) eski.</summary>
     TooOld,
     /// <summary>Samsung hesabıyla giriş tamamlanmadı.</summary>
     SignInFailed,
@@ -30,6 +30,16 @@ public enum DevModeError
     NotApproved,
     /// <summary>TV kurulumda yer kalmadığını söyledi.</summary>
     NotEnoughSpace,
+    /// <summary>Samsung: TV'de başka sertifikayla imzalı eski kopya var ve kaldırılamadı.</summary>
+    CertificateMismatch,
+    /// <summary>Samsung: TV imza sertifikasını reddetti (internet, saat ya da sertifika).</summary>
+    CertificateRejected,
+    /// <summary>Samsung: TV'nin saati geride; sertifika ona göre henüz geçerli değil.</summary>
+    TvClockWrong,
+    /// <summary>Samsung: TV, silinmiş eski kopyanın kaydı yüzünden uygulamayı kabul etmiyor ([118, -22]).</summary>
+    PackageBlocked,
+    /// <summary>Kurulum sırasında TV bağlantısı koptu.</summary>
+    ConnectionLost,
 }
 
 /// <param name="detail">Sorunu bulmak için ayrıntı (komut çıktısı gibi); hata günlüğüne yazılır, kullanıcıya gösterilmez.</param>
@@ -62,14 +72,14 @@ public sealed class DevModeInstaller(IRemoteShell shell, TimeSpan? pollInterval 
         new(new SshNetShell(host, Port, keyFile) { CommandTimeout = TimeSpan.FromMinutes(5) });
 
     public const int Port = 9922;
-    private const string AppInfoPath = "/media/developer/apps/usr/palm/applications/com.gametranslator.tv/appinfo.json";
+    private const string AppInfoPath = "/media/developer/apps/usr/palm/applications/com.GameTranslator.tv/appinfo.json";
     public const string TempDir = "/media/developer/temp";
-    private const string InstallLog = TempDir + "/gametranslator-install.log";
+    private const string InstallLog = TempDir + "/GameTranslator-install.log";
 
-    /// <summary>ares-install gibi paket TV'ye kendi adıyla yüklenir (<c>/media/developer/temp/com.gametranslator.tv_0.9.6_all.ipk</c>).</summary>
+    /// <summary>ares-install gibi paket TV'ye kendi adıyla yüklenir (<c>/media/developer/temp/com.GameTranslator.tv_0.9.6_all.ipk</c>).</summary>
     public static string RemotePackage(string package) => $"{TempDir}/{Path.GetFileName(package)}";
 
-    /// <summary><c>com.gametranslator.tv_0.6.1_all.ipk</c> → <c>0.6.1</c></summary>
+    /// <summary><c>com.GameTranslator.tv_0.6.1_all.ipk</c> → <c>0.6.1</c></summary>
     public static string? VersionOfPackage(string name)
     {
         var parts = name.Split('_');
@@ -116,18 +126,54 @@ public sealed class DevModeInstaller(IRemoteShell shell, TimeSpan? pollInterval 
         {
             throw new DevModeException(DevModeError.KeyServerOff);
         }
+        // TV'nin anahtarı eski PEM biçimindedir; uygulamanın içinde çözülür, dış araca ve dosya izinlerine bağlı kalınmaz.
+        var pem = System.Text.Encoding.UTF8.GetString(key);
+        if (LegacyPemKey.IsLegacyEncrypted(pem)) return DecryptWithCaseFallback(pem, passphrase.Trim());
+
         var file = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
         try
         {
-            await File.WriteAllBytesAsync(file, key);
+            await WritePrivateAsync(file, key);
             var result = await runner.RunAsync(tools.SshKeygen, ["-q", "-p", "-P", passphrase, "-N", "", "-f", file], null);
-            if (result.Status != 0) throw new DevModeException(DevModeError.WrongPassphrase);
+            if (result.Status != 0)
+            {
+                // Yalnız ssh-keygen parolayı reddettiyse "parola yanlış" denir; başka sebep (ör. dosya izni) günlüğe gider.
+                var wrong = result.Output.Contains("passphrase", StringComparison.OrdinalIgnoreCase)
+                    && (result.Output.Contains("incorrect", StringComparison.OrdinalIgnoreCase)
+                        || result.Output.Contains("bad", StringComparison.OrdinalIgnoreCase));
+                throw new DevModeException(wrong ? DevModeError.WrongPassphrase : DevModeError.InstallFailed, result.Output.Trim());
+            }
             return await File.ReadAllTextAsync(file);
         }
         finally
         {
             File.Delete(file);
         }
+    }
+
+    /// <summary>TV parolayı büyük harfle gösterir; küçük harfle yazılmışsa büyük harfli hâli de denenir.</summary>
+    private static string DecryptWithCaseFallback(string pem, string passphrase)
+    {
+        try
+        {
+            return LegacyPemKey.Decrypt(pem, passphrase);
+        }
+        catch (DevModeException error) when (error.Error == DevModeError.WrongPassphrase && passphrase != passphrase.ToUpperInvariant())
+        {
+            return LegacyPemKey.Decrypt(pem, passphrase.ToUpperInvariant());
+        }
+    }
+
+    /// <summary>
+    /// Linux ve macOS'ta ssh-keygen başkalarının okuyabildiği anahtar dosyasını açmaz ("bad permissions") ve bu,
+    /// parola doğruyken "parola yanlış" diye görünürdü; dosya baştan yalnız sahibine açık (0600) oluşturulur.
+    /// </summary>
+    public static async Task WritePrivateAsync(string file, byte[] content)
+    {
+        var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write };
+        if (!OperatingSystem.IsWindows()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        await using var stream = new FileStream(file, options);
+        await stream.WriteAsync(content);
     }
 
     /// <summary>TV'deki sürüm; uygulama kurulu değilse null.</summary>
@@ -147,7 +193,7 @@ public sealed class DevModeInstaller(IRemoteShell shell, TimeSpan? pollInterval 
         var remote = RemotePackage(package);
         // Önceki denemelerden kalan paketler TV'de yer kaplamasın.
         var upload = await SshAsync(
-            $"mkdir -p {TempDir} && rm -f {TempDir}/com.gametranslator.tv_*.ipk {TempDir}/gametranslator.ipk && cat > '{remote}'", package);
+            $"mkdir -p {TempDir} && rm -f {TempDir}/com.GameTranslator.tv_*.ipk {TempDir}/GameTranslator.ipk && cat > '{remote}'", package);
         if (upload.Status != 0)
             throw Failure($"yükleme çıkış kodu {upload.Status}: {Short(upload.Output)}", upload.Output);
         // Paket TV'ye eksiksiz ulaştı mı? (wc yoksa ya da çıktı okunamazsa denetim atlanır.)
@@ -353,3 +399,4 @@ public sealed class ProcessRunner : ICommandRunner
         return new CommandResult(process.ExitCode, await output + await error);
     }
 }
+

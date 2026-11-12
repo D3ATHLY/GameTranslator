@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 using System.Net;
 using System.Net.Sockets;
@@ -27,27 +27,65 @@ public enum SubtitlePlacement
 /// <param name="FontSize">36 (küçük), 46 (orta), 58 (büyük), 72 (çok büyük)</param>
 /// <param name="BottomPercent">Sabit yerleşimde altyazının ekranın altından uzaklığı, yüzde.</param>
 /// <param name="Background">Yazının arkasındaki siyah zeminin koyuluğu, yüzde (0: zemin yok).</param>
+/// <param name="StackPrevious">
+/// Hızlı konuşmada önceki satır(lar) yeni satırın üstünde kısa süre soluk kalsın mı; kapalıysa yeni satır eskisinin
+/// yerine geçer. TV uygulaması 0.9.16 ve sonrası tanır.
+/// </param>
 public sealed record SubtitleStyle(
     int FontSize = 46,
     int BottomPercent = 7,
     SubtitlePlacement Placement = SubtitlePlacement.Cover,
     int Background = 72,
     bool Bold = false,
-    string Color = "#FFFFFF");
+    SubtitleTextColor TextColor = SubtitleTextColor.White,
+    TvDisplayMode DisplayMode = TvDisplayMode.InApp,
+    bool StackPrevious = true);
+
+/// <summary>
+/// Android TV'de PS5 görüntüsünün nasıl gösterildiği. Yalnız Android TV uygulaması kullanır; diğer TV'ler ve OBS
+/// katmanı alanı tanımaz.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<TvDisplayMode>))]
+public enum TvDisplayMode
+{
+    /// <summary>HDMI GameTranslator'ın içinde; görüntü hiç gelmezse TV uygulaması kendiliğinden katmana geçer.</summary>
+    InApp,
+    /// <summary>TV HDMI'yı kendi ekranında gösterir, altyazı üstteki şeffaf katmanda (bazı TV'lerde uygulama içi görüntü siyah kalıyor).</summary>
+    Overlay,
+}
+
+/// <summary>TV'de altyazı yazısının rengi.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<SubtitleTextColor>))]
+public enum SubtitleTextColor
+{
+    White,
+    Yellow,
+}
 
 /// <summary>Altyazıları TV'ye ileten taraf (gerçekte <see cref="SubtitleServer"/>).</summary>
 public interface ISubtitleSender
 {
     /// <param name="box">Oyundaki İngilizce altyazının ekrandaki yeri (kenarlara oranla); TV çeviriyi buna göre yerleştirir.</param>
-    void SendSubtitle(string text, int durationMs = 15000, TextBox? box = null);
+    /// <param name="paragraphs">true ise metin satır satır, sola yaslı gösterilir (görev paneli gibi başlık ve maddeli yazılar).</param>
+    /// <param name="replaces">Satır az önce gösterilenin uzamış ya da düzelmiş okumasıdır (<see cref="TextMatch.IsRevision"/>); TV onu öncekinin üstüne yığmaz.</param>
+    void SendSubtitle(string text, int durationMs = 15000, TextBox? box = null, bool paragraphs = false, bool replaces = false);
     void Clear();
+}
+
+public enum SubtitleEventKind { Subtitle, Clear }
+
+/// <summary>Sunucudan geçen ve bilgisayar ekranındaki altyazı penceresinin de gösterdiği olay.</summary>
+/// <param name="Replaces">Satır öncekinin uzamış ya da düzelmiş okumasıdır; öncekinin üstüne yığılmaz, yerine geçer.</param>
+public sealed record SubtitleEvent(SubtitleEventKind Kind, string Text = "", int DurationMs = 0, bool Paragraphs = false, bool Replaces = false)
+{
+    public static readonly SubtitleEvent Cleared = new(SubtitleEventKind.Clear);
 }
 
 /// <summary>
 /// TV uygulamasının bağlandığı yerel Server-Sent Events sunucusu.
 /// <c>GET /events</c> akışında <c>subtitle</c>, <c>clear</c> ve <c>style</c> olaylarını yayınlar.
 /// </summary>
-public sealed class SubtitleServer(int port = 8787) : ISubtitleSender, IDisposable
+public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = null) : ISubtitleSender, IDisposable
 {
     private sealed class Client(TcpClient tcp, bool viewer = false)
     {
@@ -65,6 +103,12 @@ public sealed class SubtitleServer(int port = 8787) : ISubtitleSender, IDisposab
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
+    /// <summary>
+    /// Bağlantı canlı tutma çerçevesi: yorum satırını EventSource görmez; adlı "ping" olayını TV görür ve
+    /// bir süre gelmezse yarı açık kalmış bağlantıyı kapatıp yeniden bağlanır (Mac ile aynı).
+    /// </summary>
+    internal const string PingFrame = ": ping\n\nevent: ping\ndata: {}\n\n";
+
     private readonly object gate = new();
     private readonly List<Client> clients = [];
     private TcpListener? listener;
@@ -77,6 +121,15 @@ public sealed class SubtitleServer(int port = 8787) : ISubtitleSender, IDisposab
 
     /// <summary>Bağlı TV sayısı değişince çağrılır (iş parçacığı havuzunda).</summary>
     public event Action<int>? ClientsChanged;
+
+    /// <summary>
+    /// Altyazı ve temizleme olayları gönderildiği anda buraya da verilir (çağıranın iş parçacığında). Bilgisayar
+    /// ekranındaki pencere TV'ye gidenin aynısını gösterir; sunucu başlamamış olsa da çalışır.
+    /// </summary>
+    public event Action<SubtitleEvent>? EventSent;
+
+    /// <summary>false ise altyazı olayları TV'lere gitmez (altyazı yalnız bilgisayar ekranında); OBS katmanı almaya devam eder.</summary>
+    public bool SendsToTv { get; set; } = true;
 
     public int ConnectedClients
     {
@@ -104,7 +157,8 @@ public sealed class SubtitleServer(int port = 8787) : ISubtitleSender, IDisposab
         listener.Start();
         this.listener = listener;
         _ = AcceptLoop(listener);
-        pingTimer = new Timer(_ => Broadcast(": ping\n\n"), null, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(15));
+        var every = pingInterval ?? TimeSpan.FromSeconds(15);
+        pingTimer = new Timer(_ => Broadcast(PingFrame), null, every, every);
         return Task.FromResult(((IPEndPoint)listener.LocalEndpoint).Port);
     }
 
@@ -125,10 +179,9 @@ public sealed class SubtitleServer(int port = 8787) : ISubtitleSender, IDisposab
 
     public void Dispose() => Stop();
 
-    public void SendSubtitle(string text, int durationMs = 15000, TextBox? box = null) => SendSubtitle(text, durationMs, box, false);
-
     /// <param name="paragraphs">true ise metin satır satır, sola yaslı gösterilir (görev paneli gibi başlık ve maddeli yazılar).</param>
-    public void SendSubtitle(string text, int durationMs, TextBox? box, bool paragraphs)
+    /// <param name="replaces">TV satırı öncekinin üstüne yığmaz, yerine koyar (<c>replace</c> alanı; eski TV uygulamaları yok sayar).</param>
+    public void SendSubtitle(string text, int durationMs = 15000, TextBox? box = null, bool paragraphs = false, bool replaces = false)
     {
         var json = new SortedDictionary<string, object>
         {
@@ -137,8 +190,10 @@ public sealed class SubtitleServer(int port = 8787) : ISubtitleSender, IDisposab
             ["text"] = text,
         };
         if (paragraphs) json["paragraphs"] = true;
+        if (replaces) json["replace"] = true;
         if (box is { } b) json["box"] = BoxJson(b);
-        Broadcast(Frame("subtitle", json));
+        Broadcast(Frame("subtitle", json), subtitle: true);
+        EventSent?.Invoke(new SubtitleEvent(SubtitleEventKind.Subtitle, text, durationMs, paragraphs, replaces));
     }
 
     /// <summary>Dört basamağa yuvarlanır (decimal: JSON'da 0.8 olarak yazılsın).</summary>
@@ -146,7 +201,11 @@ public sealed class SubtitleServer(int port = 8787) : ISubtitleSender, IDisposab
     private static decimal Round(double value) =>
         Math.Round((decimal)Math.Clamp(value, 0, 1), 4) / 1.000000000000000000000000000000000m;
 
-    public void Clear() => Broadcast(Frame("clear", new SortedDictionary<string, object>()));
+    public void Clear()
+    {
+        Broadcast(Frame("clear", new SortedDictionary<string, object>()), subtitle: true);
+        EventSent?.Invoke(SubtitleEvent.Cleared);
+    }
 
     /// <summary>
     /// "Ekranı çevir" sonuçları: <c>screen</c> olayı her çeviriyi yazının yeri (<c>box</c>), tipik satır yüksekliği
@@ -165,11 +224,11 @@ public sealed class SubtitleServer(int port = 8787) : ISubtitleSender, IDisposab
             if (item.Paragraphs) json["paragraphs"] = true;
             return json;
         }).ToList();
-        Broadcast(Frame("screen", new SortedDictionary<string, object> { ["duration"] = durationMs, ["items"] = list }));
+        Broadcast(Frame("screen", new SortedDictionary<string, object> { ["duration"] = durationMs, ["items"] = list }), subtitle: true);
     }
 
     /// <summary>TV'deki "ekranı çevir" çevirilerini kaldırır (altyazıya dokunmaz).</summary>
-    public void ClearScreen() => Broadcast(Frame("screen-clear", new SortedDictionary<string, object>()));
+    public void ClearScreen() => Broadcast(Frame("screen-clear", new SortedDictionary<string, object>()), subtitle: true);
 
     private static SortedDictionary<string, object> BoxJson(TextBox b) => new()
     {
@@ -205,7 +264,7 @@ public sealed class SubtitleServer(int port = 8787) : ISubtitleSender, IDisposab
     public void SendStyle(SubtitleStyle style)
     {
         lock (gate) lastStyle = style;
-        Broadcast(StyleFrame(style));
+        Broadcast(StyleFrame(style), subtitle: true);
     }
 
     // --- Bağlantılar ---
@@ -226,6 +285,8 @@ public sealed class SubtitleServer(int port = 8787) : ISubtitleSender, IDisposab
         try
         {
             EnableKeepAlive(tcp.Client);
+            // Altyazı çerçeveleri küçüktür; Nagle beklemesi her satırı TV'ye geç ulaştırmasın.
+            tcp.NoDelay = true;
             var stream = tcp.GetStream();
             var requestLine = await ReadRequestLine(stream);
             var parts = requestLine?.Split(' ') ?? [];
@@ -237,7 +298,7 @@ public sealed class SubtitleServer(int port = 8787) : ISubtitleSender, IDisposab
             else if (method == "GET" && path == "/events") await OpenStream(tcp, target.Contains("viewer=obs", StringComparison.Ordinal));
             else if (method == "GET" && path == "/obs") await RespondAndClose(tcp, ObsOverlay, "text/html; charset=utf-8");
             // TV uygulaması ağdaki bilgisayarı bu yanıtla tanır.
-            else if (method == "GET" && path == "/hello") await RespondAndClose(tcp, "200 OK", "{\"app\":\"gametranslator\"}");
+            else if (method == "GET" && path == "/hello") await RespondAndClose(tcp, "200 OK", "{\"app\":\"GameTranslator\"}");
             else if (method == "GET" && FindFile(path) is { } file) await RespondAndClose(tcp, file.Data, file.Type);
             else await RespondAndClose(tcp, "404 Not Found");
         }
@@ -332,11 +393,15 @@ public sealed class SubtitleServer(int port = 8787) : ISubtitleSender, IDisposab
         ClientsChanged?.Invoke(count);
     }
 
-    /// <summary>Gönderim hatası alan bağlantı kopmuş sayılır ve listeden çıkarılır.</summary>
-    private void Broadcast(string frame)
+    /// <summary>
+    /// Gönderim hatası alan bağlantı kopmuş sayılır ve listeden çıkarılır. <paramref name="subtitle"/>: altyazı olayı;
+    /// altyazı TV'ye gitmiyorsa yalnız izleyiciler (OBS) alır. Dublaj sesi ve ping her zaman herkese gider.
+    /// </summary>
+    private void Broadcast(string frame, bool subtitle = false)
     {
         List<Client> targets;
-        lock (gate) targets = [.. clients];
+        var toTvs = !subtitle || SendsToTv;
+        lock (gate) targets = [.. clients.Where(c => toTvs || c.Viewer)];
         foreach (var client in targets)
             _ = Write(client, frame).ContinueWith(t => Remove(client), TaskContinuationOptions.OnlyOnFaulted);
     }
@@ -374,11 +439,14 @@ public sealed class SubtitleServer(int port = 8787) : ISubtitleSender, IDisposab
             ["background"] = Math.Clamp(style.Background, 0, 100),
             ["bold"] = style.Bold,
             ["bottomPercent"] = style.BottomPercent,
+            ["displayMode"] = style.DisplayMode == TvDisplayMode.Overlay ? "overlay" : "inApp",
             ["fontSize"] = style.FontSize,
             ["placement"] = style.Placement.ToString().ToLowerInvariant(),
-            ["color"] = style.Color,
+            ["stackPrevious"] = style.StackPrevious,
+            ["textColor"] = style.TextColor.ToString().ToLowerInvariant(),
         });
 
     private static string Frame(string name, SortedDictionary<string, object> json) =>
         $"event: {name}\ndata: {JsonSerializer.Serialize(json, JsonOptions)}\n\n";
 }
+

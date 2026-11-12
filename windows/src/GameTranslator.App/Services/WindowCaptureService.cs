@@ -82,6 +82,28 @@ public static class WindowCaptureService
     private const int BI_RGB = 0;
     private const uint PW_RENDERFULLCONTENT = 0x00000002;
     private const int SW_RESTORE = 9;
+    private const int SW_SHOWNOACTIVATE = 4;
+    private const int GWL_EXSTYLE = -20;
+    private const int WS_EX_TOOLWINDOW = 0x00000080;
+    private const int WS_EX_LAYERED = 0x00080000;
+    private const int WS_EX_NOACTIVATE = 0x08000000;
+    private const uint LWA_ALPHA = 0x00000002;
+    private static readonly IntPtr HWND_BOTTOM = new IntPtr(1);
+    private const uint SWP_NOSIZE = 0x0001;
+    private const uint SWP_NOMOVE = 0x0002;
+    private const uint SWP_NOACTIVATE = 0x0010;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint crKey, byte bAlpha, uint dwFlags);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
 
     private static readonly HashSet<string> RemotePlayProcessNames = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -132,19 +154,37 @@ public static class WindowCaptureService
         public uint bmiColors;
     }
 
-    public static void RestoreAndActivate(IntPtr hWnd)
+    public static void MakeInvisibleBackground(IntPtr hWnd)
     {
         try
         {
-            if (hWnd != IntPtr.Zero)
+            if (hWnd == IntPtr.Zero) return;
+
+            // 1. Taskbar'dan gizle (ToolWindow) ve şeffaf yap (Layered Window + Alpha 1)
+            int exStyle = GetWindowLong(hWnd, GWL_EXSTYLE);
+            int newExStyle = exStyle | WS_EX_TOOLWINDOW | WS_EX_LAYERED | WS_EX_NOACTIVATE;
+            if (exStyle != newExStyle)
             {
-                if (IsIconic(hWnd))
-                {
-                    ShowWindow(hWnd, SW_RESTORE);
-                }
+                SetWindowLong(hWnd, GWL_EXSTYLE, newExStyle);
             }
+            SetLayeredWindowAttributes(hWnd, 0, 1, LWA_ALPHA);
+
+            // 2. Eğer simge durumunda kaldıysa sessizce aç (kullanıcıya odak vermeden karesini renderlasın)
+            if (IsIconic(hWnd))
+            {
+                ShowWindow(hWnd, SW_SHOWNOACTIVATE);
+            }
+
+            // 3. En arkaya gönder (HWND_BOTTOM), boyutu ve konumu bozma, odak çalma
+            SetWindowPos(hWnd, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         }
         catch { }
+    }
+
+    public static void RestoreAndActivate(IntPtr hWnd)
+    {
+        // Geriye uyumluluk için Chiaki'yi ekrana fırlatmak yerine arka planda gizler
+        MakeInvisibleBackground(hWnd);
     }
 
     /// <summary>
@@ -317,5 +357,126 @@ public static class WindowCaptureService
             }
         }
         return true;
+    }
+
+    /// <summary>
+    /// Masaüstünü veya seçili monitörü doğrudan GDI BitBlt ile 1080p/ekran çözünürlüğünde yakalar.
+    /// </summary>
+    public static Frame? CaptureScreen(int x = 0, int y = 0, int width = 1920, int height = 1080)
+    {
+        int screenW = GetSystemMetrics(SM_CXSCREEN);
+        int screenH = GetSystemMetrics(SM_CYSCREEN);
+        if (width <= 0 || width > screenW) width = screenW > 0 ? screenW : 1920;
+        if (height <= 0 || height > screenH) height = screenH > 0 ? screenH : 1080;
+
+        IntPtr srcDc = GetDC(IntPtr.Zero);
+        if (srcDc == IntPtr.Zero) return null;
+
+        try
+        {
+            IntPtr memDc = CreateCompatibleDC(srcDc);
+            IntPtr hBitmap = CreateCompatibleBitmap(srcDc, width, height);
+            IntPtr oldBmp = SelectObject(memDc, hBitmap);
+
+            BitBlt(memDc, 0, 0, width, height, srcDc, x, y, SRCCOPY);
+
+            var bi = new BITMAPINFO
+            {
+                bmiHeader = new BITMAPINFOHEADER
+                {
+                    biSize = (uint)Marshal.SizeOf<BITMAPINFOHEADER>(),
+                    biWidth = width,
+                    biHeight = -height,
+                    biPlanes = 1,
+                    biBitCount = 32,
+                    biCompression = BI_RGB
+                }
+            };
+
+            var pixels = new byte[width * height * 4];
+            GetDIBits(memDc, hBitmap, 0, (uint)height, pixels, ref bi, DIB_RGB_COLORS);
+
+            SelectObject(memDc, oldBmp);
+            DeleteObject(hBitmap);
+            DeleteDC(memDc);
+            ReleaseDC(IntPtr.Zero, srcDc);
+
+            return new Frame(pixels, width, height, width * 4);
+        }
+        catch
+        {
+            ReleaseDC(IntPtr.Zero, srcDc);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Başlığı veya alt dizesi eşleşen herhangi bir açık pencereyi bulur (ör. OBS Studio, Projector vb.).
+    /// </summary>
+    public static IntPtr FindWindowBySubstring(string substring)
+    {
+        if (string.IsNullOrWhiteSpace(substring)) return IntPtr.Zero;
+        IntPtr found = IntPtr.Zero;
+
+        EnumWindows((hWnd, _) =>
+        {
+            try
+            {
+                if (!IsWindowVisible(hWnd) || IsIconic(hWnd)) return true;
+                GetWindowThreadProcessId(hWnd, out var pid);
+                if (pid == 0 || pid == Environment.ProcessId) return true;
+
+                var sb = new StringBuilder(256);
+                GetWindowText(hWnd, sb, 256);
+                var title = sb.ToString();
+
+                if (title.Contains(substring, StringComparison.OrdinalIgnoreCase))
+                {
+                    found = hWnd;
+                    return false;
+                }
+            }
+            catch { }
+            return true;
+        }, IntPtr.Zero);
+
+        return found;
+    }
+
+    /// <summary>
+    /// Kullanıcının seçebileceği açık pencerelerin başlık listesini döndürür.
+    /// </summary>
+    public static IReadOnlyList<string> GetTopLevelWindowTitles()
+    {
+        var list = new List<string>();
+        try
+        {
+            EnumWindows((hWnd, _) =>
+            {
+                try
+                {
+                    if (!IsWindowVisible(hWnd) || IsIconic(hWnd)) return true;
+                    GetWindowThreadProcessId(hWnd, out var pid);
+                    if (pid == 0 || pid == Environment.ProcessId) return true;
+
+                    if (!GetClientRect(hWnd, out var rect) || rect.Width < 300 || rect.Height < 200)
+                        return true;
+
+                    var sb = new StringBuilder(256);
+                    GetWindowText(hWnd, sb, 256);
+                    var title = sb.ToString().Trim();
+
+                    if (!string.IsNullOrWhiteSpace(title) && !list.Contains(title))
+                    {
+                        list.Add(title);
+                    }
+                }
+                catch { }
+                return true;
+            }, IntPtr.Zero);
+        }
+        catch { }
+
+        return list;
     }
 }

@@ -13,6 +13,8 @@ public static class Registration
 {
     /// <summary>libchiaki'nin CHIAKI_RP_APPLICATION_REASON_INVALID_PSN_ID değeri.</summary>
     internal const uint InvalidPsnIdReason = 0x80108b02;
+    /// <summary>CHIAKI_RP_APPLICATION_REASON_REGIST_FAILED: "Regist failed, probably invalid PIN".</summary>
+    private const uint RegistFailedReason = 0x80108b09;
     private const uint InUseReason = 0x80108b10;
     private const uint VersionReason = 0x80108b11;
     private const uint CrashReason = 0x80108b15;
@@ -31,20 +33,40 @@ public static class Registration
                                      TaskCreationOptions.LongRunning, TaskScheduler.Default).WaitAsync(ct);
     }
 
-    /// <summary>PS5'in bildirdiği nedenden kullanıcıya anlatılacak hata.</summary>
-    /// <param name="errors">Kayıt sırasında libchiaki'nin yazdığı hata satırları.</param>
+    /// <summary>PS5'in gösterdiği 8 haneli kodu okur. Boşluk, tire ve nokta atlanır; başka bir karakter ya da 8'den
+    /// farklı hane sayısı null. Başka yazı sistemlerinin onluk rakamları da kabul edilir (Mac'teki Registration.pin).</summary>
+    public static uint? ParsePin(string? text)
+    {
+        if (text is null) return null;
+        var digits = new StringBuilder(8);
+        foreach (var rune in text.EnumerateRunes())
+        {
+            if (Rune.IsWhiteSpace(rune) || (rune.IsBmp && "-–._".Contains((char)rune.Value))) continue;
+            if (Rune.GetUnicodeCategory(rune) != System.Globalization.UnicodeCategory.DecimalDigitNumber) return null;
+            digits.Append((char)('0' + (int)Rune.GetNumericValue(rune)));
+        }
+        return digits.Length == 8 && uint.TryParse(digits.ToString(), System.Globalization.NumberStyles.None,
+                                                   System.Globalization.CultureInfo.InvariantCulture, out var value) ? value : null;
+    }
+
+    /// <summary>PS5'in bildirdiği nedenden ya da libchiaki'nin hata satırlarından kullanıcıya anlatılacak hata.</summary>
+    /// <param name="errors">Kayıt sırasında libchiaki'nin yazdığı hata satırları (regist.c).</param>
     internal static RegistrationFailure FailureFrom(uint? reason, IReadOnlyList<string>? errors = null) => reason switch
     {
         InvalidPsnIdReason => RegistrationFailure.WrongAccount,
+        RegistFailedReason => RegistrationFailure.WrongCode,
         InUseReason => RegistrationFailure.InUse,
         VersionReason => RegistrationFailure.VersionMismatch,
         CrashReason => RegistrationFailure.ConsoleCrashed,
-        null when errors?.Any(IsSearchFailure) == true => RegistrationFailure.NoAnswer,
+        null when Any(errors, "getaddrinfo") => RegistrationFailure.BadAddress,
+        null when Any(errors, "search response", "connect for search", "send search", "Regist search failed",
+                      "connect for request", "Regist connect failed") => RegistrationFailure.NoAnswer,
+        null when Any(errors, "response HTTP header", "receiving response content", "receive response content") => RegistrationFailure.NoReply,
         _ => RegistrationFailure.Failed,
     };
 
-    private static bool IsSearchFailure(string line) =>
-        line.Contains("search response", StringComparison.Ordinal) || line.Contains("connect for search", StringComparison.Ordinal);
+    private static bool Any(IReadOnlyList<string>? errors, params string[] needles) =>
+        errors?.Any(line => needles.Any(needle => line.Contains(needle, StringComparison.Ordinal))) == true;
 
     /// <summary>Hata iletisine eklenen ayrıntı: PS5'in kodu, o yoksa libchiaki'nin ilk (en belirleyici) hata satırı.</summary>
     internal static string? DetailFrom(IReadOnlyList<string> errors)
@@ -62,6 +84,7 @@ public static class Registration
         }
 
         NativeMethods.EnsureInitialized();
+        RemotePlayLog.Write(2, $"PS5 kaydı başlıyor: {host}, hesap kimliği {Convert.ToBase64String(accountId)}");
         for (var attempt = 1; ; attempt++)
         {
             var errors = new List<string>();
@@ -81,16 +104,37 @@ public static class Registration
             }
 
             if (result == 0)
-                return new RegisteredConsole(host, NativeMethods.FixedString(output.Nickname, 0x20),
-                                             new ReadOnlySpan<byte>(output.RegistKey, 0x10).ToArray(),
-                                             new ReadOnlySpan<byte>(output.Morning, 0x10).ToArray());
-            if (result == 2) throw new RegistrationException(RegistrationFailure.Canceled);
+            {
+                var registered = new RegisteredConsole(host, NativeMethods.FixedString(output.Nickname, 0x20),
+                                                       new ReadOnlySpan<byte>(output.RegistKey, 0x10).ToArray(),
+                                                       new ReadOnlySpan<byte>(output.Morning, 0x10).ToArray());
+                RemotePlayLog.Write(2, $"PS5 kaydı tamam ({host}): {registered.Name}");
+                try
+                {
+                    string b64 = Convert.ToBase64String(accountId);
+                    string keyHex = Convert.ToHexString(registered.RegistKey);
+                    string morningHex = Convert.ToHexString(registered.Morning);
+                    WriteChiakiConfig(host, keyHex, morningHex, b64);
+                }
+                catch { }
+                return registered;
+            }
 
             IReadOnlyList<string> lines;
             lock (errors) lines = [.. errors];
             uint? reported = result == 1 && reason != 0 ? reason : null;
-            var failure = result == 1 ? FailureFrom(reported, lines) : RegistrationFailure.Failed;
-            var detail = DetailFrom(lines) ?? (result == 1 ? null : $"native error {result}");
+            var failure = result switch
+            {
+                1 => FailureFrom(reported, lines),
+                2 => RegistrationFailure.NoReply,
+                _ => RegistrationFailure.Failed,
+            };
+            var detail = DetailFrom(lines) ?? (result switch
+            {
+                1 => null,
+                2 => "no answer within 30 s",
+                _ => $"native error {result}",
+            });
             RemotePlayLog.Write(0, $"PS5 kaydı başarısız ({host}, deneme {attempt}): {failure} {detail}");
             if (failure != RegistrationFailure.NoAnswer || attempt >= SearchAttempts)
                 throw new RegistrationException(failure, reported, detail);
@@ -222,7 +266,6 @@ public static class Registration
             Path.Combine(baseDir, "..", "..", "..", "scripts", "bin", "node.exe"),
             Path.Combine(baseDir, "..", "..", "..", "..", "scripts", "bin", "node.exe"),
             Path.Combine(baseDir, "..", "..", "..", "..", "..", "scripts", "bin", "node.exe"),
-            @"C:\Users\mehme\OneDrive\Belgeler\gametranslator\scripts\bin\node.exe",
             @"C:\Program Files\nodejs\node.exe"
         };
         foreach (var c in candidates)
@@ -241,8 +284,7 @@ public static class Registration
             Path.Combine(baseDir, "scripts", "ps5-register.js"),
             Path.Combine(baseDir, "..", "..", "..", "scripts", "ps5-register.js"),
             Path.Combine(baseDir, "..", "..", "..", "..", "scripts", "ps5-register.js"),
-            Path.Combine(baseDir, "..", "..", "..", "..", "..", "scripts", "ps5-register.js"),
-            @"C:\Users\mehme\OneDrive\Belgeler\gametranslator\scripts\ps5-register.js"
+            Path.Combine(baseDir, "..", "..", "..", "..", "..", "scripts", "ps5-register.js")
         };
         foreach (var c in candidates)
         {
@@ -277,7 +319,7 @@ public static class Registration
 
                         using var host1Key = hostsKey.CreateSubKey("1");
                         host1Key.SetValue("host", host, Microsoft.Win32.RegistryValueKind.String);
-                        host1Key.SetValue("server_nickname", "PS5-sefflex", Microsoft.Win32.RegistryValueKind.String);
+                        host1Key.SetValue("server_nickname", "PS5", Microsoft.Win32.RegistryValueKind.String);
                         host1Key.SetValue("target", 1000100, Microsoft.Win32.RegistryValueKind.DWord); // CHIAKI_TARGET_PS5_1
 
                         // rp_regist_key: Chiaki checks size == 16 (REG_BINARY)
@@ -368,7 +410,7 @@ public static class Registration
                     sb.AppendLine("[registered_hosts]");
                     sb.AppendLine("size=1");
                     sb.AppendLine($"1\\host={host}");
-                    sb.AppendLine("1\\server_nickname=PS5-sefflex");
+                    sb.AppendLine("1\\server_nickname=PS5");
                     sb.AppendLine("1\\target=1000100");
                     sb.AppendLine($"1\\regist_key={key}");
                     sb.AppendLine($"1\\rp_regist_key={key}");

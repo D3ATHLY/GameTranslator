@@ -293,27 +293,18 @@
                                         <TextBlock x:Name="StreamPlaceholderIcon" Text="{x:Static c:Glyphs.Controller}" Style="{StaticResource GlyphText}" FontSize="28" Foreground="#33FFFFFF" HorizontalAlignment="Center" />
                                         <TextBlock x:Name="StreamPlaceholderTitle" Text="PS5 Canlı Akışı Başlatılmadı" FontWeight="SemiBold" FontSize="11.5" Foreground="#AAFFFFFF" HorizontalAlignment="Center" Margin="0,6,0,2" />
                                         <TextBlock x:Name="StreamPlaceholderSubtitle" Text="PS5 ekranını canlı görmek için sol menüden '▶ Çeviriyi Başlat'a basın." FontSize="10" Foreground="#66FFFFFF" HorizontalAlignment="Center" TextAlignment="Center" />
-                                        <Button x:Name="BtnLaunchChiaki" Content="🎮 Chiaki Remote Play'i Başlat" Margin="0,8,0,0" Padding="12,5" FontSize="10" FontWeight="SemiBold"
-                                                Background="#0A84FF" Foreground="White" BorderThickness="0" Cursor="Hand" Click="OnLaunchChiakiManual" Visibility="Collapsed">
-                                            <Button.Resources>
-                                                <Style TargetType="Border">
-                                                    <Setter Property="CornerRadius" Value="5" />
-                                                </Style>
-                                            </Button.Resources>
-                                        </Button>
                                     </StackPanel>
 
-                                    <!-- Üst Rozet & Pencereden Yenile Butonu -->
+                                    <!-- Üst Rozet & Yenile Butonu -->
                                     <Grid VerticalAlignment="Top" Margin="8">
                                         <Border HorizontalAlignment="Left" Background="#CC000000" CornerRadius="12" Padding="8,4">
                                             <StackPanel Orientation="Horizontal">
                                                 <Ellipse Width="6" Height="6" Fill="#10B981" Margin="0,0,6,0" VerticalAlignment="Center" />
-                                                <TextBlock Text="PS5 REMOTE PLAY CANLI AKIŞ (1080p 60 FPS)" FontSize="9" FontWeight="Bold" Foreground="White" VerticalAlignment="Center" />
+                                                <TextBlock Text="CANLI GÖRÜNTÜ AKIŞI (1080p 60 FPS)" FontSize="9" FontWeight="Bold" Foreground="White" VerticalAlignment="Center" />
                                             </StackPanel>
                                         </Border>
                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                            <Button Content="🎮 Chiaki'yi Aç" Margin="0,0,6,0" Padding="8,3" FontSize="9" Style="{StaticResource SecondaryButton}" Click="OnLaunchChiakiManual" />
-                                            <Button Content="📷 Pencereden Yenile" Padding="8,3" FontSize="9" Style="{StaticResource SecondaryButton}" Click="OnRefreshCapture" />
+                                            <Button Content="📷 Yenile" Padding="8,3" FontSize="9" Style="{StaticResource SecondaryButton}" Click="OnRefreshCapture" />
                                         </StackPanel>
                                     </Grid>
 
@@ -586,7 +577,47 @@
                         <!-- 4. SEKME: BAĞLANTI & SİSTEM                                -->
                         <!-- ========================================================= -->
                         <StackPanel x:Name="PanelSystem" Visibility="Collapsed">
-                            <TextBlock Text="Konsol ve Ağ Bağlantıları" FontWeight="Bold" FontSize="13.5" Foreground="{DynamicResource textPrimaryBrush}" Margin="0,0,0,12" />
+                            <TextBlock Text="Konsol, Giriş Kaynağı ve Ağ Bağlantıları" FontWeight="Bold" FontSize="13.5" Foreground="{DynamicResource textPrimaryBrush}" Margin="0,0,0,12" />
+
+                            <!-- GÖRÜNTÜ VE VİDEO GİRİŞ KAYNAĞI SEÇİMİ (Remote Play / Capture Card / OBS) -->
+                            <Border Background="#161B26" BorderBrush="#0A84FF" BorderThickness="1.5" CornerRadius="10" Padding="14" Margin="0,0,0,12">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,8">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="🎥" FontSize="15" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                            <TextBlock Text="Görüntü Giriş Kaynağı" FontWeight="Bold" FontSize="13" Foreground="#38BDF8" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                        <TextBlock Text="OBS &amp; Capture Card Destekli" FontSize="10" FontFamily="Consolas" Foreground="#94A3B8" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                    </Grid>
+
+                                    <TextBlock Text="Oyun görüntüsünün nereden okunacağını seçin. Capture Card veya OBS kullanıyorsanız PS5 Remote Play'e gerek kalmaz." FontSize="11" Foreground="{DynamicResource textSecondaryBrush}" Margin="0,0,0,10" TextWrapping="Wrap" />
+
+                                    <Grid Margin="0,0,0,10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <RadioButton x:Name="SourceRadioRemotePlay" Content="🎮 PS5 Remote Play" GroupName="VideoSourceGroup" Checked="OnVideoSourceChanged" IsChecked="True" Foreground="White" FontSize="11" VerticalAlignment="Center" />
+                                        <RadioButton Grid.Column="1" x:Name="SourceRadioCaptureCard" Content="📹 Yakalama Kartı" GroupName="VideoSourceGroup" Checked="OnVideoSourceChanged" Foreground="White" FontSize="11" VerticalAlignment="Center" />
+                                        <RadioButton Grid.Column="2" x:Name="SourceRadioDesktop" Content="🖥️ Masaüstü / OBS" GroupName="VideoSourceGroup" Checked="OnVideoSourceChanged" Foreground="White" FontSize="11" VerticalAlignment="Center" />
+                                    </Grid>
+
+                                    <!-- Pencere / Monitör Seçimi Kartı (Masaüstü veya Capture Card seçildiğinde) -->
+                                    <Border x:Name="SourceWindowPickerCard" Background="#0E121B" CornerRadius="6" Padding="10" Visibility="Collapsed">
+                                        <StackPanel>
+                                            <Grid Margin="0,0,0,6">
+                                                <TextBlock Text="Hedef Pencere veya Ekran:" FontSize="10.5" FontWeight="SemiBold" Foreground="#94A3B8" VerticalAlignment="Center" />
+                                                <Button Content="🔄 Pencereleri Yenile" Click="OnRefreshWindows" HorizontalAlignment="Right" Style="{StaticResource SecondaryButton}" Padding="8,2" FontSize="10" />
+                                            </Grid>
+                                            <ComboBox x:Name="SourceWindowComboBox" SelectionChanged="OnSourceWindowSelected" MinHeight="30" FontSize="11">
+                                                <ComboBoxItem Content="🖥️ Tüm Masaüstü / Ana Ekran" Tag="" IsSelected="True" />
+                                            </ComboBox>
+                                            <TextBlock Text="💡 OBS kullanıyorsanız: OBS'te 'Tam Ekran Projektör' veya 'Pencere Projektörü' açıp listeden seçebilirsiniz." FontSize="10" Foreground="#64748B" Margin="0,6,0,0" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
 
                             <!-- PS5 Kartı -->
                             <Border Background="#111622" BorderBrush="#1F293D" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,10">

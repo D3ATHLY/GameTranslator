@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 using System.Net.WebSockets;
 using System.Text;
@@ -168,3 +168,4 @@ public sealed class SsapClient : ITvControl
         return JsonNode.Parse(message.ToArray()) ?? throw new SsapException("bad response");
     }
 }
+

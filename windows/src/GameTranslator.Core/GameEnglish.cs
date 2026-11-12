@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 using System.Text.RegularExpressions;
 
@@ -35,3 +35,4 @@ public static partial class GameEnglish
         return sentence;
     }
 }
+

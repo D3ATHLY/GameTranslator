@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 using System.Diagnostics;
 
@@ -51,3 +51,4 @@ public sealed class TvLocator(
         return found.Count == 1 ? found[0] : null;
     }
 }
+

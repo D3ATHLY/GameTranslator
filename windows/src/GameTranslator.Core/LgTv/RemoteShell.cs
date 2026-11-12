@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 using System.Net.Sockets;
 using Renci.SshNet;
@@ -79,3 +79,4 @@ public sealed class SshNetShell(string host, int port, string keyFile, string us
         }
     }
 }
+

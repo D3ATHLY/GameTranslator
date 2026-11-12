@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 namespace GameTranslator.Core.Dubbing;
 
@@ -56,3 +56,4 @@ public static class DubbingModel
     /// <summary>YAML'da tek tırnaklı dize: Windows yollarındaki ters bölü olduğu gibi kalır.</summary>
     private static string Quoted(string path) => "'" + path.Replace("'", "''") + "'";
 }
+

@@ -11,9 +11,9 @@ public static class Program
     /// işlenip çıkılır. Normal açılışta hiçbir şey yapmadan döner.
     /// </summary>
     [STAThread]
-    public static void Main()
+    public static void Main(string[] args)
     {
-        VelopackApp.Build().Run();
+        try { VelopackApp.Build().Run(); } catch { }
         var app = new App();
         app.InitializeComponent();
         app.Run();

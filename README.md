@@ -1,14 +1,25 @@
-# 🎮 GameTranslator v1.0 Pro — Sefflex Edition
-### Konsol Oyunları İçin Gerçek Zamanlı, Sıfır Gecikmeli Türkçe Altyazı Sistemi
+# 🎮 GameTranslator v1.5 Pro — Sefflex Edition
+### Konsol Oyunları İçin Gerçek Zamanlı, Sıfır Gecikmeli Türkçe Altyazı ve Hazır Yama Sistemi
 
 [![Platform: macOS](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows-blue?style=flat-square&logo=apple)](https://gitlab.com/sefflex/GameTranslator)
 [![Target: Smart TV](https://img.shields.io/badge/TV-TCL%20Android%20TV%20%7C%20LG%20webOS%20%7C%20Samsung%20Tizen-green?style=flat-square&logo=android)](https://gitlab.com/sefflex/GameTranslator)
 [![Zero-Lag](https://img.shields.io/badge/Gecikme-0%20ms%20(Doğrudan%20HDMI)-brightgreen?style=flat-square)](#-temel-mantık-3-cümlede-nasıl-çalışıyor)
+[![Version](https://img.shields.io/badge/Sürüm-v1.5.0-brightgreen?style=flat-square)](https://gitlab.com/sefflex/GameTranslator/-/releases/v1.5.0)
 [![License: AGPL-3.0](https://img.shields.io/badge/Lisans-AGPL--3.0-red?style=flat-square)](LICENSE)
 
 ![GameTranslator Native UI](docs/screenshots/gametranslator-ui.jpg)
 
 **GameTranslator**, başta **GTA 6** olmak üzere Türkçe dil desteği bulunmayan PlayStation 5 oyunlarını, televizyonunuzda **sıfır gecikmeyle (0 input lag)**, **4K 120 FPS / HDR görüntü kalitesi zerre bozulmadan** Türkçe altyazıyla oynamanızı sağlayan açık kaynaklı sistemdir.
+
+---
+
+## ⚡ v1.5.0 Yenilikleri
+
+* 🚀 **Tam Gizli (Headless) PS5 Remote Play:** Chiaki penceresini ekranda açmaya gerek kalmadan, doğrudan arka planda ultra düşük gecikmeli (38ms) yerel akış ve otomatik eşleştirme.
+* 🧩 **0 ms Hazır Türkçe Oyun Yamaları:** GTA V, Red Dead Redemption 2, Elden Ring, Mafia: The Old Country, Assassin's Creed Shadows, Death Stranding 2 ve CoD Modern Warfare 2019 için gömülü Türkçe oyun yamaları! Oyunu açtığınızda yama kendiliğinden tanınır ve çeviriyi beklemeden anında TV'ye yansıtılır.
+* 🎥 **Genişletilmiş Görüntü Kaynağı (Capture Card & OBS):** PS5 Remote Play'in yanı sıra Elgato / USB Capture Card ve doğrudan Masaüstü / OBS canlı akışını seçebilme.
+* 🌐 **Dinamik Ağ ve Tak-Çalıştır:** Tüm sabit IP'ler ve geliştirici yolları temizlendi; yerel ağdaki PS5 ve TV'ler otomatik taranıp saniyeler içinde bağlanır.
+* 📦 **Modern Velopack Windows Kurulum Sihirbazı:** Tek tıkla otomatik kurulum, masaüstü kısayolu ve arka plan güncelleme desteği.
 
 ---
 
@@ -74,16 +85,16 @@ Eğer kaynak kodları ZIP veya `git clone` ile indirdiyseniz:
 
 ### 2. 🪟 PC (Windows Yerel Masaüstü Kurulumu - Windows 10 / 11)
 > C# / .NET 10, WPF ve DirectML / Windows Media OCR altyapısıyla çalışan yerel, donanım hızlandırmalı Windows masaüstü uygulamasıdır.  
-> 💡 **Hızlı İndirme:** [GitLab Sürümler (Releases)](https://gitlab.com/sefflex/GameTranslator/-/releases/v1.0.0) sayfasından hazır kurulum sihirbazını (**`GameTranslator-Setup-v1.0.0.exe`**) veya taşınabilir paketi (**`GameTranslator-Windows-v1.0.0.zip`**) indirebilirsiniz.
+> 💡 **Hızlı İndirme:** [GitLab Sürümler (Releases)](https://gitlab.com/sefflex/GameTranslator/-/releases/v1.5.0) sayfasından hazır kurulum sihirbazını (**`GameTranslator-1.5.0-Setup.exe`**) veya taşınabilir paketi (**`GameTranslator-win-Portable.zip`**) indirebilirsiniz.
 
 #### 🟢 Yöntem A: Hazır Kurulum Sihirbazı ile Tek Tıkla Kurulum (Önerilen)
-1. **Releases'ten İndirin:** [GitLab Releases](https://gitlab.com/sefflex/GameTranslator/-/releases/v1.0.0) bölümünden **`GameTranslator-Setup-v1.0.0.exe`** dosyasını indirin.
-2. **Kurulum Sihirbazını Çalıştırın:** **`GameTranslator-Setup-v1.0.0.exe`** dosyasına çift tıklayın ve ekrandaki adımları takip ederek *"İleri > Kur"* butonuna basın.
-   * *Neler Yapar:* Gerekli tüm bileşenleri ve Chiaki motorunu güvenli uygulama dizinine kurar, Windows güvenlik izinlerini otomatik ayarlar.
+1. **Releases'ten İndirin:** [GitLab Releases](https://gitlab.com/sefflex/GameTranslator/-/releases/v1.5.0) bölümünden **`GameTranslator-1.5.0-Setup.exe`** dosyasını indirin.
+2. **Kurulum Sihirbazını Çalıştırın:** **`GameTranslator-1.5.0-Setup.exe`** dosyasına çift tıklayın ve kurulum otomatik olarak tamamlanır.
+   * *Neler Yapar:* Gerekli tüm bileşenleri, yerel çeviri ve OCR kütüphanelerini hızlıca kurar, Windows güvenlik izinlerini otomatik ayarlar.
    * *Kısayollar:* Masaüstünüze ve Başlat Menünüze şık `GameTranslator` ikonunu bırakır.
-   * *Kaldırma (Uninstall):* İstenildiği zaman Windows *Ayarlar › Yüklü Uygulamalar* (Program Ekle/Kaldır) bölümünden veya kurulu dizindeki `unins000.exe` ile tek tıkla sistemden tertemiz kaldırılabilir.
+   * *Kaldırma (Uninstall):* İstenildiği zaman Windows *Ayarlar › Yüklü Uygulamalar* (Program Ekle/Kaldır) bölümünden tek tıkla sistemden tertemiz kaldırılabilir.
 3. **📦 Taşınabilir (Portable / Kurulumsuz) Seçenek:**
-   * Bilgisayarına hiçbir şey kurmak istemeyenler [GitLab Releases](https://gitlab.com/sefflex/GameTranslator/-/releases/v1.0.0) sayfasından **`GameTranslator-Windows-v1.0.0.zip`** arşivini indirip herhangi bir klasöre çıkartabilir ve içindeki **`GameTranslator.exe`** dosyasına çift tıklayarak doğrudan çalıştırabilir!
+   * Bilgisayarına hiçbir şey kurmak istemeyenler [GitLab Releases](https://gitlab.com/sefflex/GameTranslator/-/releases/v1.5.0) sayfasından **`GameTranslator-win-Portable.zip`** arşivini indirip herhangi bir klasöre çıkartabilir ve içindeki **`GameTranslator.exe`** dosyasına çift tıklayarak doğrudan çalıştırabilir!
 4. **⚠️ Windows Güvenlik İpuçları (İlk Kez Açarken):**
    * **Windows Defender "Windows kişisel bilgisayarınızı korudu" (SmartScreen) derse:**  
      Mavi penceredeki **`Ek bilgi`** yazısına tıklayın, ardından altta açılan **`Yine de çalıştır`** butonuna basın. (Açık kaynaklı ve dijital imza sertifikası satın alınmamış yeni bağımsız projelerde standarttır, %100 güvenlidir).

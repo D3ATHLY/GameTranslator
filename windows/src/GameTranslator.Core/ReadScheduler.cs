@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 namespace GameTranslator.Core;
 
@@ -61,3 +61,4 @@ public sealed class ReadScheduler(int changeThreshold = 16, int maxReuse = 20, i
         return false;
     }
 }
+

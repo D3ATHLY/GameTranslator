@@ -9,47 +9,26 @@ echo   Konsol Oyunları İçin Gerçek Zamanlı Türkçe Altyazı Sistemi
 echo ======================================================================
 echo.
 
-:: 1. Önceden derlenmiş EXE kontrolü
-if exist "bin\GameTranslator.exe" (
-    echo [BİLGİ] Hazır GameTranslator ikilisi başlatılıyor...
-    start "" "bin\GameTranslator.exe"
-    exit /b 0
-)
-
-if exist "bin\GameTranslator.App.exe" (
-    echo [BİLGİ] Hazır GameTranslator ikilisi başlatılıyor...
-    start "" "bin\GameTranslator.App.exe"
-    exit /b 0
-)
-
-:: 2. .NET SDK Kontrolü
+:: 1. .NET SDK Kontrolü
 set "DOTNET_CMD=dotnet"
 where dotnet >nul 2>nul
 if %ERRORLEVEL% neq 0 (
     if exist "%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe" (
         set "DOTNET_CMD=%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe"
-    ) else (
-        echo.
-        echo ======================================================================
-        echo   [UYARI] Bilgisayarınızda Microsoft .NET SDK bulunamadı!
-        echo ======================================================================
-        echo.
-        echo GameTranslator Windows uygulamasının çalışması için ücretsiz
-        echo .NET SDK paketinin bilgisayarınızda kurulu olması gerekmektedir.
-        echo.
-        echo Resmi Microsoft İndirme Adresi:
-        echo https://dotnet.microsoft.com/download
-        echo.
-        set /p OPEN_BROWSER="Resmi Microsoft indirme sayfasını tarayıcınızda açmak ister misiniz? (E/H): "
-        if /i "%OPEN_BROWSER%"=="E" (
-            start https://dotnet.microsoft.com/download
-        )
-        echo.
-        echo Kurulumu tamamladıktan sonra GameTranslator.bat dosyasını tekrar çift tıklayın.
-        echo.
-        pause
-        exit /b 1
     )
+)
+
+:: 2. Hazır GameTranslator paketi kontrolü
+if exist "bin\GameTranslator.dll" (
+    echo [BİLGİ] Hazır GameTranslator paketi başlatılıyor...
+    start "" "%DOTNET_CMD%" "bin\GameTranslator.dll"
+    exit /b 0
+)
+
+if exist "bin\GameTranslator.exe" (
+    echo [BİLGİ] Hazır GameTranslator ikilisi başlatılıyor...
+    start "" "bin\GameTranslator.exe"
+    exit /b 0
 )
 
 :: 3. Proje Dosyası Kontrolü ve Başlatma

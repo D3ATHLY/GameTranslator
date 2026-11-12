@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 namespace GameTranslator.Core;
 
@@ -198,3 +198,4 @@ public static class ReadingFallback
         return (x, (int)Math.Ceiling(left + width) - x);
     }
 }
+

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 using GameTranslator.Core;
 
@@ -118,3 +118,4 @@ public class ScreenTranslationTests
             Task.FromResult(text == "Open the door." ? "Kapıyı aç." : text);
     }
 }
+

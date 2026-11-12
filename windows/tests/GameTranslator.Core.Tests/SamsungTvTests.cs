@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -13,7 +13,7 @@ public class SamsungTvTests
     [Fact]
     public void AddressCarriesAppNameAndToken()
     {
-        Assert.Equal("wss://192.168.1.20:8002/api/v2/channels/samsung.remote.control?name=R2FtZVRyYW5zbGF0b3I=",
+        Assert.Equal("wss://192.168.1.20:8002/api/v2/channels/samsung.remote.control?name=Q291Y2hTdWJz",
             SamsungMessages.Url("192.168.1.20", null).ToString());
         Assert.EndsWith("&token=123", SamsungMessages.Url("192.168.1.20", "123").ToString());
     }
@@ -53,3 +53,4 @@ public class SamsungTvTests
     public void LocatorDoesNotMoveToAnotherBrand() =>
         Assert.Null(TvLocator.Moved(new Tv("Salon", "1.1.1.1"), [new Tv("Salon", "1.1.1.2", TvBrand.Samsung)]));
 }
+

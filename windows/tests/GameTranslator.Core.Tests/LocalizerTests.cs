@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 using GameTranslator.Core;
 
@@ -38,3 +38,4 @@ public class LocalizerTests
         Assert.True(missing.Count == 0, string.Join(", ", missing));
     }
 }
+

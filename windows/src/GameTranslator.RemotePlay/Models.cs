@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 using GameTranslator.Core;
 
@@ -40,6 +40,8 @@ public enum DisconnectKind
     Network,
     /// <summary>İkinci kullanıcının PS5'te giriş şifresi var; Uzaktan Oynatma şifre istiyor.</summary>
     LoginPasscode,
+    /// <summary>Kayıtlı adreste PS5 aramaya yanıt vermedi ve oturum da açılamadı (ayrıntı: adres).</summary>
+    NotFound,
     Other,
 }
 
@@ -67,6 +69,12 @@ public enum RegistrationFailure
     ConsoleCrashed,
     /// <summary>PS5'in sistem sürümü libchiaki'nin bildiği sürümlerden farklı.</summary>
     VersionMismatch,
+    /// <summary>PS5 kodu kabul etmedi (0x80108b09): kod yanlış ya da süresi dolmuş.</summary>
+    WrongCode,
+    /// <summary>PS5 isteği aldı ama yanıtı zamanında gelmedi (libchiaki'nin ya da bizim 30 sn'lik süremiz doldu).</summary>
+    NoReply,
+    /// <summary>Girilen adres çözülemedi (yanlış yazılmış IP).</summary>
+    BadAddress,
 }
 
 /// <param name="reason">PS5'in bildirdiği RP-Application-Reason (ör. 0x80108b09); PS5 yanıt vermediyse null.</param>
@@ -93,3 +101,4 @@ public interface IStreamSession : IDisposable
     /// <summary>Bilgisayar uykudan uyandığında ya da ağ değiştiğinde çağrılır.</summary>
     void ReconnectNow();
 }
+

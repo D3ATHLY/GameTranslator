@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 using System.Globalization;
 using System.Text.Json;
@@ -7,7 +7,7 @@ using System.Text.Json.Serialization;
 namespace GameTranslator.Core;
 
 /// <summary>
-/// design/tokens.json: renkler, yazı boyutları, boşluklar. Mac uygulaması da aynı dosyayı kullanır;
+/// design/tokens.json: renkler, yazı boyutları, boşluklar, köşeler (parıltı yok). Mac uygulaması da aynı dosyayı kullanır;
 /// bir değeri değiştirmek için yalnız o dosya düzenlenir.
 /// </summary>
 public sealed class DesignTokens
@@ -56,3 +56,4 @@ public sealed class DesignTokens
         return (Math.Max(x, y) + 0.05) / (Math.Min(x, y) + 0.05);
     }
 }
+

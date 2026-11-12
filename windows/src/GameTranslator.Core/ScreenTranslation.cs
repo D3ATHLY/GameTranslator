@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 namespace GameTranslator.Core;
 
@@ -125,3 +125,4 @@ public static class ScreenTranslation
     public static int DisplayMilliseconds(IReadOnlyList<Item> items) =>
         Math.Clamp(8000 + (items.Sum(item => item.Translation.Length) * 50), 12000, 60000);
 }
+

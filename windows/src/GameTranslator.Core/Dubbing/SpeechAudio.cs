@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 using System.Buffers.Binary;
 using System.Text;
@@ -148,3 +148,4 @@ public sealed class SpeechAudio(float[] samples, int sampleRate)
         return new SpeechAudio([.. output], SampleRate);
     }
 }
+

@@ -55,42 +55,41 @@ public static class ConsoleDiscovery
     /// <summary>Bloklayan arama (oturum kuyruğu ve DiscoverAsync kullanır).</summary>
     internal static unsafe IReadOnlyList<ConsoleInfo> Discover(string? host, TimeSpan timeout)
     {
-        // 1. Önce saf .NET UDP soketiyle ara (DLL gerektirmez, sıfır çökme garantisi!)
-        var managed = DiscoverPureManaged(host, timeout);
-        if (managed.Count > 0 || !NativeMethods.IsAvailable)
-            return managed;
-
-        // 2. Eğer yerel DLL varsa onu dene
-        try
+        if (NativeMethods.IsAvailable)
         {
-            var targets = host is null ? LocalTargets() : [host];
-            var collector = new Collector();
-            var handle = GCHandle.Alloc(collector);
-            var strings = new nint[targets.Count];
             try
             {
-                for (var i = 0; i < targets.Count; i++) strings[i] = Marshal.StringToCoTaskMemUTF8(targets[i]);
-                delegate* unmanaged[Cdecl]<byte*, byte*, int, nint, void> callback = &OnConsole;
-                fixed (nint* pointer = strings)
-                    NativeMethods.cs_discover(pointer, strings.Length, (int)timeout.TotalMilliseconds, (nint)callback, GCHandle.ToIntPtr(handle));
+                NativeMethods.EnsureInitialized();
+                var targets = host is null ? LocalTargets() : [host];
+                var collector = new Collector();
+                var handle = GCHandle.Alloc(collector);
+                var strings = new nint[targets.Count];
+                try
+                {
+                    for (var i = 0; i < targets.Count; i++) strings[i] = Marshal.StringToCoTaskMemUTF8(targets[i]);
+                    delegate* unmanaged[Cdecl]<byte*, byte*, int, nint, void> callback = &OnConsole;
+                    fixed (nint* pointer = strings)
+                        NativeMethods.cs_discover(pointer, strings.Length, (int)timeout.TotalMilliseconds, (nint)callback, GCHandle.ToIntPtr(handle));
+                }
+                finally
+                {
+                    foreach (var pointer in strings) Marshal.FreeCoTaskMem(pointer);
+                    handle.Free();
+                }
+                lock (collector)
+                {
+                    if (collector.Hosts.Count > 0)
+                        return [.. collector.Hosts.Values.OrderBy(c => c.Host, StringComparer.Ordinal)];
+                }
             }
-            finally
+            catch
             {
-                foreach (var pointer in strings) Marshal.FreeCoTaskMem(pointer);
-                handle.Free();
+                // Sessizce managed sonuca düş
             }
-            lock (collector)
-            {
-                if (collector.Hosts.Count > 0)
-                    return [.. collector.Hosts.Values.OrderBy(c => c.Host, StringComparer.Ordinal)];
-            }
-        }
-        catch
-        {
-            // Sessizce managed sonuca dön
         }
 
-        return managed;
+        // Managed UDP aramasını dene
+        return DiscoverPureManaged(host, timeout);
     }
 
     internal static IReadOnlyList<ConsoleInfo> DiscoverPureManaged(string? host, TimeSpan timeout)

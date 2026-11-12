@@ -21,5 +21,9 @@
     <None Include="$(MSBuildThisFileDirectory)..\..\native\bin\gametranslator_native.dll" Link="gametranslator_native.dll"
           CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Visible="false" />
   </ItemGroup>
+  <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)..\..\native\bin\couchsubs_native.dll')">
+    <None Include="$(MSBuildThisFileDirectory)..\..\native\bin\couchsubs_native.dll" Link="couchsubs_native.dll"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
 
 </Project>

@@ -29,11 +29,24 @@ public static class ChiakiLauncher
             if (File.Exists(full)) return full;
         }
 
+        var projectCandidates = new[]
+        {
+            Path.Combine(baseDir, "..", "..", "..", "..", "chiaki", "chiaki.exe"),
+            Path.Combine(baseDir, "..", "..", "..", "chiaki", "chiaki.exe"),
+            Path.Combine(Environment.CurrentDirectory, "chiaki", "chiaki.exe")
+        };
+        foreach (var p in projectCandidates)
+        {
+            if (File.Exists(p)) return Path.GetFullPath(p);
+        }
+
         var localApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var progFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+        var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
         var systemPaths = new[]
         {
+            Path.Combine(userProfile, "Downloads", "Chiaki-v2.2.0-Windows-x86_64", "chiaki.exe"),
             Path.Combine(localApp, "Programs", "Chiaki", "chiaki.exe"),
             Path.Combine(localApp, "Programs", "chiaki-ng", "chiaki-ng.exe"),
             Path.Combine(progFiles, "Chiaki", "chiaki.exe"),
@@ -52,18 +65,18 @@ public static class ChiakiLauncher
     }
 
     /// <summary>
-    /// Çeviri başladığında Chiaki'yi doğrudan konsola bağlanacak şekilde (stream modu) başlatır.
-    /// Zaten yayın penceresi açıksa ön plana getirir. Boşta bekleyen bir Chiaki varsa kapatıp stream komutuyla yeniden başlatır.
+    /// Çeviri başladığında Chiaki'yi doğrudan konsola bağlanacak şekilde (stream modu) arka planda sessizce başlatır.
+    /// Kullanıcıyı asla rahatsız etmez, penceresi arka planda şeffaf tutulur.
     /// </summary>
     public static bool LaunchAndStream(string? host = null, string? consoleName = null)
     {
         try
         {
-            // Zaten açık ve yayın yapan bir hedef pencere varsa ön plana getir
+            // Zaten açık ve yayın yapan bir hedef pencere varsa arka planda tut
             var hWnd = WindowCaptureService.FindTargetWindow(out _);
             if (hWnd != IntPtr.Zero)
             {
-                WindowCaptureService.RestoreAndActivate(hWnd);
+                WindowCaptureService.MakeInvisibleBackground(hWnd);
                 return true;
             }
 
@@ -80,11 +93,14 @@ public static class ChiakiLauncher
 
             var dir = Path.GetDirectoryName(exePath) ?? string.Empty;
             StartupGuard.UnblockFiles(dir);
+
+            // Chiaki'yi arka planda / simge durumunda başlat
             var psi = new ProcessStartInfo
             {
                 FileName = exePath,
                 WorkingDirectory = dir,
-                UseShellExecute = true
+                UseShellExecute = true,
+                WindowStyle = ProcessWindowStyle.Minimized
             };
 
             // Eğer kayıtlı bir takma ad veya konsol varsa doğrudan stream komutunu ver
@@ -100,6 +116,22 @@ public static class ChiakiLauncher
             }
 
             Process.Start(psi);
+
+            // Chiaki penceresi oluştuğunda hemen görünmez yap ve en arkaya gönder
+            _ = Task.Run(async () =>
+            {
+                for (int i = 0; i < 40; i++)
+                {
+                    await Task.Delay(100);
+                    var win = WindowCaptureService.FindTargetWindow(out _);
+                    if (win != IntPtr.Zero)
+                    {
+                        WindowCaptureService.MakeInvisibleBackground(win);
+                        break;
+                    }
+                }
+            });
+
             return true;
         }
         catch

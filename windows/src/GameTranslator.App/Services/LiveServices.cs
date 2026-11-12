@@ -88,13 +88,20 @@ public sealed class LiveServices : IAppServices
         }
     }
 
-    public IStreamSession MakeStream(RegisteredConsole console, byte[] accountId)
+    public IStreamSession MakeStream(RegisteredConsole? console, byte[]? accountId, UserSettings? settings = null)
     {
-        if (StreamSession.IsNativeAvailable)
+        if (settings?.VideoSource == VideoSourceType.DesktopScreen || settings?.VideoSource == VideoSourceType.CaptureCard)
+        {
+            return new DesktopCaptureStreamSession(settings?.DesktopWindowName, settings?.ScreenIndex ?? 0);
+        }
+
+        if (StreamSession.IsNativeAvailable && console != null && accountId != null)
         {
             return new StreamSession(console, accountId);
         }
-        return new WindowCaptureStreamSession(console, accountId);
+
+        var cons = console ?? new RegisteredConsole("127.0.0.1", "PS5", accountId ?? new byte[16], new byte[16]);
+        return new WindowCaptureStreamSession(cons, accountId);
     }
 
     public IKeeper MakeKeeper(LgTv tv, string? key, IReadOnlyDictionary<string, string> parameters, Func<bool> appConnected, Action<LgTv> onMoved)

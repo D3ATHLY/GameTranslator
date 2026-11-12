@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 using System.Globalization;
 using System.Text;
@@ -178,3 +178,4 @@ public static partial class TurkishNumbers
     [GeneratedRegex(@"(%)?(\d{1,3}(?:\.\d{3})+|\d+)(?:([,:])(\d+))?(%)?")]
     private static partial Regex NumberPattern();
 }
+

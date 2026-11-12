@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 using GameTranslator.Core;
 using Xunit;
@@ -100,3 +100,4 @@ public class ReadSchedulerTests
         Assert.NotEqual(RegionCropper.Signature(Filled(50)), RegionCropper.Signature(Filled(200)));
     }
 }
+

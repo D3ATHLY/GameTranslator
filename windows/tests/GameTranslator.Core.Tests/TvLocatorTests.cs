@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 using GameTranslator.Core.LgTv;
 using Xunit;
@@ -80,3 +80,4 @@ public class TvLocatorTests
     public void StaysPutWhenSavedAddressStillAnswersDiscovery() =>
         Assert.Null(TvLocator.Moved(Saved, [new Tv("Salon", Saved.Host)]));
 }
+

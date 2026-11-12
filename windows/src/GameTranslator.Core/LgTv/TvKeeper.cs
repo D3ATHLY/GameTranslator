@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 namespace GameTranslator.Core.LgTv;
 
@@ -107,3 +107,4 @@ public sealed class TvKeeper(Func<Task<ITvControl>> connect, string appId, IRead
 
     public void Dispose() => Stop();
 }
+

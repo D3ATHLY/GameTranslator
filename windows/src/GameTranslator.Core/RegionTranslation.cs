@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 namespace GameTranslator.Core;
 
@@ -115,3 +115,4 @@ public static class RegionTranslation
     /// <summary>Çevirinin TV'de kalma süresi (ms): uzun panel yazısı okunacak kadar durur.</summary>
     public static int DisplayMilliseconds(string text) => Math.Clamp(4000 + (text.Length * 70), 6000, 25000);
 }
+

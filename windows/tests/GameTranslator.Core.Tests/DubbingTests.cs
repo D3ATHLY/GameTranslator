@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 using System.Text.Json;
 using GameTranslator.Core.Dubbing;
@@ -144,3 +144,4 @@ public class PocketTtsExitTests
         Assert.Equal("pocket-tts kapandı (çıkış kodu 3)", PocketTtsServer.ExitMessage(3, new Queue<string>()));
     }
 }
+

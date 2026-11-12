@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 using System.Diagnostics;
 using System.Net;
@@ -145,3 +145,4 @@ public sealed class PocketTtsServer(string executable, string config, string def
         return port;
     }
 }
+

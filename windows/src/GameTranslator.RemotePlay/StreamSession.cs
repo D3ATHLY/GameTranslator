@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -74,7 +74,6 @@ internal sealed class SerialQueue : IDisposable
 /// Ses kapalıdır, kol girdisi gönderilmez. Bağlantı koparsa kendiliğinden yeniden bağlanır.</summary>
 public sealed class StreamSession : IStreamSession
 {
-    /// <summary>Yerel CChiaki / gametranslator_native DLL sistemde yüklenebiliyor mu.</summary>
     public static bool IsNativeAvailable => NativeMethods.IsAvailable;
 
     /// <summary>Saniyede en çok bu kadar kare BGRA'ya çevrilir (Mac'teki gibi).</summary>
@@ -190,6 +189,10 @@ public sealed class StreamSession : IStreamSession
 
         // PS5 uyuyorsa uyandır; uyanmayı kuyruğu bloklamadan, aralıklı kontrollerle bekle.
         var info = ConsoleDiscovery.Discover(console.Host, TimeSpan.FromSeconds(2)).FirstOrDefault() ?? Relocate();
+        searchAnswered = info is not null;
+        RemotePlayLog.Note(info is null
+            ? $"PS5 oturumu: {console.Host} aramaya yanıt vermedi, yine de bağlanılıyor"
+            : $"PS5 oturumu: {info.Name} {info.Host} {(info.IsAwake ? "uyanık" : "dinlenmede, uyandırılıyor")}");
         if (info is { IsAwake: false })
         {
             try { ConsoleDiscovery.Wake(console); }
@@ -199,6 +202,14 @@ public sealed class StreamSession : IStreamSession
         }
         OpenSession(current);
     }
+
+    /// <summary>Son aramada PS5 yanıt verdi mi (yalnız kuyrukta).</summary>
+    private bool searchAnswered = true;
+
+    /// <summary>Oturum ağ hatasıyla düştüyse ve PS5 aramaya da yanıt vermediyse neden "bulunamadı"dır (adresle).
+    /// Eskiden ikisi de yalnız "Yeniden bağlanılıyor…" idi.</summary>
+    internal static DisconnectReason Classify(DisconnectReason reason, bool searchAnswered, string host) =>
+        !searchAnswered && reason.Kind is DisconnectKind.Network or DisconnectKind.Other ? new DisconnectReason(DisconnectKind.NotFound, host) : reason;
 
     /// <summary>Kayıtlı adreste PS5 yoksa (modem adresini değiştirmiş olabilir) ağda arar; bulursa adresi günceller.</summary>
     private ConsoleInfo? Relocate()
@@ -234,6 +245,7 @@ public sealed class StreamSession : IStreamSession
         var started = SessionBox.Start(this, current, console, accountId, out var failure);
         if (started is null)
         {
+            RemotePlayLog.Note($"PS5 oturumu başlatılamadı ({console.Host}): {failure}");
             ScheduleReconnect(current, new DisconnectReason(DisconnectKind.Other, failure ?? "session could not be started"));
             return;
         }
@@ -287,6 +299,7 @@ public sealed class StreamSession : IStreamSession
 
     private void ScheduleReconnect(int current, DisconnectReason reason)
     {
+        reason = Classify(reason, searchAnswered, console.Host);
         Emit(new SessionState(SessionPhase.Disconnected, reason));
         if (!IsCurrent(current)) return;
         var delay = policy.NextDelay();
@@ -295,6 +308,9 @@ public sealed class StreamSession : IStreamSession
 
     private void Emit(SessionState state)
     {
+        // Ana ekrandaki durumun nedeni remoteplay.log'da da görünsün.
+        if (state.Phase != SessionPhase.Connecting)
+            RemotePlayLog.Note($"PS5 oturumu: {state.Phase}{(state.Reason is { } why ? $" {why.Kind} {why.Detail}" : "")}");
         try { StateChanged?.Invoke(state); }
         catch (Exception error) { RemotePlayLog.Write(0, $"StateChanged handler: {error}"); }
     }
@@ -321,11 +337,6 @@ public sealed class StreamSession : IStreamSession
         {
             var box = new SessionBox(owner, generation);
             failure = null;
-            if (!NativeMethods.IsAvailable)
-            {
-                failure = "gametranslator_native DLL bulunamadı. Lütfen Chiaki veya ilgili bileşenleri kontrol edin.";
-                return null;
-            }
             try
             {
                 NativeMethods.EnsureInitialized();
@@ -391,10 +402,18 @@ public sealed class StreamSession : IStreamSession
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         private static unsafe void OnLog(int level, byte* message, nint user)
         {
-            var text = NativeMethods.Utf8(message);
-            // Oturum başlatılamazsa nedeni son hata satırıdır (cs_session_start aynı iş parçacığında yazar).
-            if (level == 0 && text is not null && From(user) is { } box) box.lastError = text;
-            RemotePlayLog.Write(level, text);
+            // UnmanagedCallersOnly işlevinden kaçan hata süreci uyarısız kapatır (diğer geri çağrılar gibi yakalanır).
+            try
+            {
+                var text = NativeMethods.Utf8(message);
+                // Oturum başlatılamazsa nedeni son hata satırıdır (cs_session_start aynı iş parçacığında yazar).
+                if (level == 0 && text is not null && From(user) is { } box) box.lastError = text;
+                RemotePlayLog.Write(level, text);
+            }
+            catch
+            {
+                // Günlük satırı kaybolsa da oturum sürer.
+            }
         }
     }
 }
@@ -463,3 +482,4 @@ internal sealed class FrameDelivery : IDisposable
         }
     }
 }
+

@@ -807,7 +807,8 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
     public async Task StartAsync()
     {
         // Düğmeye iki kez basılması ya da beklerken tekrar çağrılması ikinci bir oturum açmaz.
-        if (isRunning || isStarting || console is null || accountId is null || tv is null) return;
+        if (isRunning || isStarting) return;
+        if (settings.VideoSource == VideoSourceType.RemotePlay && (console is null || accountId is null)) return;
         IsStarting = true;
         try
         {
@@ -818,7 +819,7 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
             MakePipeline();
             if (settings.Dubbing.Enabled && DubbingInstalled) MakeDubber()?.Prepare();
 
-            var stream = services.MakeStream(console, accountId);
+            var stream = services.MakeStream(console, accountId, settings);
             stream.StateChanged += state => post(() => SessionStateChanged(state));
             stream.ConsoleMoved += moved => post(() => ConsoleMoved(moved));
             stream.FrameReceived += HandleFrame;
@@ -826,12 +827,15 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
             session = stream;
 
             // TV uygulamasını başlat ve açık tut; TV kapalıysa açıldığında bağlanır.
-            var running = server;
-            var tvKeeper = services.MakeKeeper(tv, store.Load<string>(StoreKeys.TvKey), new Dictionary<string, string> { ["server"] = ServerAddress(tv) },
-                () => running.ConnectedClients > 0, moved => post(() => TvMoved(moved)));
-            tvKeeper.Start(TimeSpan.FromSeconds(5));
-            keeper = tvKeeper;
-            _ = RefreshTvAppAsync();
+            if (tv != null)
+            {
+                var running = server;
+                var tvKeeper = services.MakeKeeper(tv, store.Load<string>(StoreKeys.TvKey), new Dictionary<string, string> { ["server"] = ServerAddress(tv) },
+                    () => running.ConnectedClients > 0, moved => post(() => TvMoved(moved)));
+                tvKeeper.Start(TimeSpan.FromSeconds(5));
+                keeper = tvKeeper;
+                _ = RefreshTvAppAsync();
+            }
 
             sleep.Begin();
             IsRunning = true;

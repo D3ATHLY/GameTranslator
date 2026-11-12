@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 using System.Net;
 using GameTranslator.Core.LgTv;
@@ -35,3 +35,4 @@ public class LocalNetworkTests
         Assert.False(LocalNetwork.IsPrivate(IPAddress.Parse("172.32.0.1")));
     }
 }
+

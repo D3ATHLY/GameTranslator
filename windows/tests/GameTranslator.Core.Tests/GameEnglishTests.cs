@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 using GameTranslator.Core;
 
@@ -24,3 +24,4 @@ public class GameEnglishTests
     [InlineData("Stand down!")]
     public void OtherTextIsUnchanged(string source) => Assert.Equal(source, GameEnglish.Plain(source));
 }
+
