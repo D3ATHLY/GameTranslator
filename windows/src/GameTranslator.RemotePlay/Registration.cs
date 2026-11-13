@@ -228,8 +228,10 @@ public static class Registration
                     string registKey = root.GetProperty("registKey").GetString() ?? "";
                     string rpKey = root.TryGetProperty("rpKey", out var rpk) ? (rpk.GetString() ?? "") : "";
 
-                    byte[] registKeyBytes = Encoding.ASCII.GetBytes(registKey.PadRight(16)[..16]);
-                    byte[] morningBytes = Encoding.ASCII.GetBytes((rpKey.Length > 0 ? rpKey : registKey).PadRight(16)[..16]);
+                    // PS5 iki anahtarı da onaltılık metin olarak verir. Yerel kayıt yolu (cs_register) bunları çözülmüş
+                    // 16 bayt olarak saklar; oturum isteği de öyle bekler. Metnin kendisi saklanırsa PS5 oturumu reddeder.
+                    byte[] registKeyBytes = KeyBytes(registKey);
+                    byte[] morningBytes = KeyBytes(rpKey.Length > 0 ? rpKey : registKey);
 
                     WriteChiakiConfig(host, registKey, rpKey, b64Account);
                     return new RegisteredConsole(host, "PlayStation 5", registKeyBytes, morningBytes);
@@ -254,6 +256,17 @@ public static class Registration
         }
 
         throw new RegistrationException(RegistrationFailure.Failed, null, "PS5 eşleştirme tamamlanamadı. Konsolun açık ve PIN kodunun doğru olduğunu kontrol edin.");
+    }
+
+    /// <summary>Onaltılık anahtar metnini 16 bayta çözer (kısaysa sıfırla doldurur).</summary>
+    internal static byte[] KeyBytes(string hex)
+    {
+        var bytes = new byte[16];
+        byte[] parsed;
+        try { parsed = Convert.FromHexString(hex.Trim()); }
+        catch (FormatException) { parsed = Encoding.ASCII.GetBytes(hex.Trim()); }
+        Array.Copy(parsed, bytes, Math.Min(parsed.Length, bytes.Length));
+        return bytes;
     }
 
     private static string? FindNodeExecutable()

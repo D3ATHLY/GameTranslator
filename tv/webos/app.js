@@ -420,6 +420,7 @@
     eventSource = new EventSource(address + '/events');
     eventSource.onopen = function () {
       clearTimeout(scanTimer);
+      scanTimer = null;
       clearTimeout(dropTimer);
       dropTimer = null;
       setStatus('st-conn', t('connected'), 'ok');
@@ -486,9 +487,13 @@
   var scanning = false;
 
   function scheduleScan() {
-    if (!platform.localAddress || scanning) return;
-    clearTimeout(scanTimer);
-    scanTimer = setTimeout(scanForServer, SCAN_PAUSE_MS);
+    // EventSource birkaç saniyede bir yeniden dener ve her denemede buraya gelinir; bekleyen sayaç baştan
+    // başlatılırsa tarama hiç çalışmaz.
+    if (!platform.localAddress || scanning || scanTimer !== null) return;
+    scanTimer = setTimeout(function () {
+      scanTimer = null;
+      scanForServer();
+    }, SCAN_PAUSE_MS);
   }
 
   function probe(address, done) {

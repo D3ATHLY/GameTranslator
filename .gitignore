@@ -30,3 +30,6 @@ test_*.cs
 couchsubs*
 *.tmp
 *.jpg
+
+# Mobil derleme için klonlanan chiaki-ng kaynakları
+third-party/chiaki-ng/

@@ -46,6 +46,7 @@ public partial class App : Application
             return;
         }
         RemotePlayDiagnostics.Start();
+        SubtitleLog.Enable();
         ThemeManager.Apply(Resources);
         ThemeManager.Follow(Resources);
         var controller = new AppController(new LiveServices(), new DpapiAppStore(), new FileSettingsStore(), new WindowsSleepGuard(),

@@ -202,3 +202,24 @@ public class NativeHelperTests
     }
 }
 
+
+public class ScriptRegistrationKeyTests
+{
+    [Fact]
+    public void RegistKeyIsHexDecodedAndZeroPadded()
+    {
+        // PS5 "6788b1a1" anahtarını onaltılık metin olarak verir; saklanan 16 bayt çözülmüş hâlidir.
+        var bytes = Registration.KeyBytes("3637383862316131");
+        Assert.Equal(16, bytes.Length);
+        Assert.Equal("6788b1a1", System.Text.Encoding.ASCII.GetString(bytes, 0, 8));
+        Assert.All(bytes[8..], b => Assert.Equal(0, b));
+        Assert.Equal(0x6788b1a1UL, new RegisteredConsole("h", "n", bytes, new byte[16]).WakeCredential);
+    }
+
+    [Fact]
+    public void SessionKeyIsSixteenRawBytes()
+    {
+        var bytes = Registration.KeyBytes("000102030405060708090a0b0c0d0e0f");
+        Assert.Equal(Enumerable.Range(0, 16).Select(i => (byte)i), bytes);
+    }
+}
