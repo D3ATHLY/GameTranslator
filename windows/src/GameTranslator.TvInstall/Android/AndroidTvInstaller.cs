@@ -12,10 +12,30 @@ namespace GameTranslator.TvInstall.Android;
 /// GameTranslator'ın Android TV uygulamasını ağ üzerinden kurar. TV'de geliştirici seçenekleri ve USB hata ayıklama
 /// açık olmalıdır; Android TV'lerin çoğu bu ayarla 5555 portunda ADB bekler.
 /// </summary>
-public sealed partial class AndroidTvInstaller(string host, string keyDirectory, int port = AndroidTvInstaller.DefaultPort)
+public sealed partial class AndroidTvInstaller
 {
     public const int DefaultPort = 5555;
     public const string PackageName = "com.gametranslator.tv";
+
+    private readonly string host;
+    private readonly int port;
+    private readonly string keyDirectory;
+
+    public AndroidTvInstaller(string host, string keyDirectory, int port = DefaultPort)
+    {
+        if (host.Contains(':'))
+        {
+            var parts = host.Split(':');
+            this.host = parts[0].Trim();
+            if (int.TryParse(parts[1].Trim(), out var p)) port = p;
+        }
+        else
+        {
+            this.host = host.Trim();
+        }
+        this.port = port;
+        this.keyDirectory = keyDirectory;
+    }
 
     /// <summary>Kurulum sırasında TV'nin onay sorusunu göstermesi.</summary>
     public Action? OnApprovalNeeded { get; init; }
@@ -23,6 +43,12 @@ public sealed partial class AndroidTvInstaller(string host, string keyDirectory,
     /// <summary>TV'de ADB açık mı (port yanıt veriyor mu)?</summary>
     public static async Task<bool> IsReachableAsync(string host, int port = DefaultPort, TimeSpan? timeout = null)
     {
+        if (host.Contains(':'))
+        {
+            var parts = host.Split(':');
+            host = parts[0].Trim();
+            if (int.TryParse(parts[1].Trim(), out var p)) port = p;
+        }
         using var tcp = new TcpClient();
         using var limit = new CancellationTokenSource(timeout ?? TimeSpan.FromSeconds(1));
         try
@@ -44,7 +70,7 @@ public sealed partial class AndroidTvInstaller(string host, string keyDirectory,
         await Parallel.ForEachAsync(hosts, new ParallelOptions { MaxDegreeOfParallelism = 64, CancellationToken = cancellationToken },
             async (candidate, _) =>
             {
-                if (await IsReachableAsync(candidate, port, TimeSpan.FromMilliseconds(700))) found.Add(candidate);
+                if (await IsReachableAsync(candidate, port, TimeSpan.FromMilliseconds(1000))) found.Add(candidate);
             });
         return [.. found.OrderBy(h => IPAddress.Parse(h).GetAddressBytes()[3])];
     }
@@ -64,12 +90,30 @@ public sealed partial class AndroidTvInstaller(string host, string keyDirectory,
         }
     }
 
-    private static IEnumerable<IPAddress> LocalAddresses() =>
-        NetworkInterface.GetAllNetworkInterfaces()
+    private static IEnumerable<IPAddress> LocalAddresses()
+    {
+        var filtered = NetworkInterface.GetAllNetworkInterfaces()
+            .Where(n => n.OperationalStatus == OperationalStatus.Up 
+                     && n.NetworkInterfaceType != NetworkInterfaceType.Loopback
+                     && !n.Description.Contains("Virtual", StringComparison.OrdinalIgnoreCase)
+                     && !n.Description.Contains("vEthernet", StringComparison.OrdinalIgnoreCase)
+                     && !n.Description.Contains("Hyper-V", StringComparison.OrdinalIgnoreCase)
+                     && !n.Description.Contains("WSL", StringComparison.OrdinalIgnoreCase)
+                     && !n.Description.Contains("VMware", StringComparison.OrdinalIgnoreCase)
+                     && !n.Description.Contains("VirtualBox", StringComparison.OrdinalIgnoreCase))
+            .SelectMany(n => n.GetIPProperties().UnicastAddresses)
+            .Select(a => a.Address)
+            .Where(a => a.AddressFamily == AddressFamily.InterNetwork && IsPrivate(a))
+            .ToList();
+
+        if (filtered.Count > 0) return filtered;
+
+        return NetworkInterface.GetAllNetworkInterfaces()
             .Where(n => n.OperationalStatus == OperationalStatus.Up && n.NetworkInterfaceType != NetworkInterfaceType.Loopback)
             .SelectMany(n => n.GetIPProperties().UnicastAddresses)
             .Select(a => a.Address)
             .Where(a => a.AddressFamily == AddressFamily.InterNetwork && IsPrivate(a));
+    }
 
     internal static bool IsPrivate(IPAddress address)
     {
@@ -82,7 +126,7 @@ public sealed partial class AndroidTvInstaller(string host, string keyDirectory,
     /// </summary>
     /// <returns>TV'de artık bulunan sürüm ve kurulum yapılıp yapılmadığı.</returns>
     public async Task<(string Version, bool Installed)> EnsureInstalledAsync(string apkPath, string version,
-        CancellationToken cancellationToken = default, bool forceReinstall = false)
+        CancellationToken cancellationToken = default, string? serverAddress = null, bool forceReinstall = false)
     {
         await using var adb = await ConnectAsync(cancellationToken);
 
@@ -95,7 +139,7 @@ public sealed partial class AndroidTvInstaller(string host, string keyDirectory,
         var needsInstall = forceReinstall || installed is null || Versions.IsNewer(version, installed);
         if (!needsInstall)
         {
-            var startRes = await StartAppAsync(adb, cancellationToken);
+            var startRes = await StartAppAsync(adb, serverAddress, cancellationToken);
             if (!startRes.Contains("Error"))
             {
                 return (installed!, false);
@@ -103,13 +147,17 @@ public sealed partial class AndroidTvInstaller(string host, string keyDirectory,
         }
 
         await InstallAsync(adb, apkPath, cancellationToken);
-        await StartAppAsync(adb, cancellationToken);
+        await StartAppAsync(adb, serverAddress, cancellationToken);
         return (version, true);
     }
 
-    private static async Task<string> StartAppAsync(AdbConnection adb, CancellationToken cancellationToken)
+    /// <summary>Uygulamayı doğrudan PC sunucu adresi parametresiyle başlatır veya mevcut örneğe iletir.</summary>
+    public async Task<string> StartAppWithServerAsync(string serverAddress, CancellationToken cancellationToken = default)
     {
-        var result = await adb.RunAsync($"shell:am start -n {PackageName}/.MainActivity", cancellationToken: cancellationToken);
+        await using var adb = await ConnectAsync(cancellationToken);
+        var json = $"{{\"server\":\"{serverAddress}\"}}";
+        var cmd = $"shell:am start -n {PackageName}/.MainActivity --es params '{json}' --es server '{serverAddress}'";
+        var result = await adb.RunAsync(cmd, cancellationToken: cancellationToken);
         if (result.Contains("Error"))
         {
             await adb.RunAsync($"shell:cmd package install-existing {PackageName}", cancellationToken: cancellationToken);
@@ -117,7 +165,26 @@ public sealed partial class AndroidTvInstaller(string host, string keyDirectory,
             if (!string.IsNullOrEmpty(cur))
             {
                 await adb.RunAsync($"shell:cmd package install-existing --user {cur} {PackageName}", cancellationToken: cancellationToken);
-                result = await adb.RunAsync($"shell:am start --user {cur} -n {PackageName}/.MainActivity", cancellationToken: cancellationToken);
+                result = await adb.RunAsync($"shell:am start --user {cur} -n {PackageName}/.MainActivity --es params '{json}' --es server '{serverAddress}'", cancellationToken: cancellationToken);
+            }
+        }
+        return result;
+    }
+
+    private static async Task<string> StartAppAsync(AdbConnection adb, string? serverAddress, CancellationToken cancellationToken)
+    {
+        var extra = !string.IsNullOrEmpty(serverAddress)
+            ? $" --es params '{{\"server\":\"{serverAddress}\"}}' --es server '{serverAddress}'"
+            : "";
+        var result = await adb.RunAsync($"shell:am start -n {PackageName}/.MainActivity{extra}", cancellationToken: cancellationToken);
+        if (result.Contains("Error"))
+        {
+            await adb.RunAsync($"shell:cmd package install-existing {PackageName}", cancellationToken: cancellationToken);
+            var cur = (await adb.RunAsync("shell:am get-current-user", cancellationToken: cancellationToken)).Trim();
+            if (!string.IsNullOrEmpty(cur))
+            {
+                await adb.RunAsync($"shell:cmd package install-existing --user {cur} {PackageName}", cancellationToken: cancellationToken);
+                result = await adb.RunAsync($"shell:am start --user {cur} -n {PackageName}/.MainActivity{extra}", cancellationToken: cancellationToken);
             }
         }
         return result;

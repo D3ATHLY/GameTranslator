@@ -13,7 +13,7 @@ public class SamsungTvTests
     [Fact]
     public void AddressCarriesAppNameAndToken()
     {
-        Assert.Equal("wss://192.168.1.20:8002/api/v2/channels/samsung.remote.control?name=Q291Y2hTdWJz",
+        Assert.Equal("wss://192.168.1.20:8002/api/v2/channels/samsung.remote.control?name=R2FtZVRyYW5zbGF0b3I=",
             SamsungMessages.Url("192.168.1.20", null).ToString());
         Assert.EndsWith("&token=123", SamsungMessages.Url("192.168.1.20", "123").ToString());
     }
@@ -21,10 +21,10 @@ public class SamsungTvTests
     [Fact]
     public void LaunchMessageCarriesParametersAsMetaTag()
     {
-        var node = JsonNode.Parse(SamsungMessages.Launch("GameTranslatorT.GameTranslator", new Dictionary<string, string> { ["server"] = "http://1.2.3.4:8787" }))!;
+        var node = JsonNode.Parse(SamsungMessages.Launch("GameTransT.GameTranslator", new Dictionary<string, string> { ["server"] = "http://1.2.3.4:8787" }))!;
         Assert.Equal("ed.apps.launch", node["params"]!["event"]!.GetValue<string>());
         var data = node["params"]!["data"]!;
-        Assert.Equal("GameTranslatorT.GameTranslator", data["appId"]!.GetValue<string>());
+        Assert.Equal("GameTransT.GameTranslator", data["appId"]!.GetValue<string>());
         Assert.Equal("http://1.2.3.4:8787", JsonNode.Parse(data["metaTag"]!.GetValue<string>())!["server"]!.GetValue<string>());
     }
 

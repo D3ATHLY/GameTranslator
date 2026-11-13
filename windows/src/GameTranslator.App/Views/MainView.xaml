@@ -63,12 +63,16 @@
                                 </Style>
                             </Button.Resources>
                             <Grid Margin="10,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <TextBlock Text="🔍" FontSize="11" Foreground="#38BDF8" Margin="0,0,6,0" VerticalAlignment="Center" />
-                                    <TextBlock Text="Oyun Okuma Alanı: " FontSize="11" Foreground="{DynamicResource textSecondaryBrush}" VerticalAlignment="Center" />
-                                    <TextBlock x:Name="ShortcutPresetText" Text="Alt Orta (Standart)" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource textPrimaryBrush}" VerticalAlignment="Center" />
+                                    <TextBlock Text="🔍" FontSize="11" Foreground="#38BDF8" Margin="0,0,5,0" VerticalAlignment="Center" />
+                                    <TextBlock Text="Okuma Alanı: " FontSize="10.5" Foreground="{DynamicResource textSecondaryBrush}" VerticalAlignment="Center" />
+                                    <TextBlock x:Name="ShortcutPresetText" Text="Alt Orta" FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource textPrimaryBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                                 </StackPanel>
-                                <TextBlock Text="Ayarla ➔" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="10.5" FontWeight="Bold" Foreground="#0A84FF" />
+                                <TextBlock Grid.Column="1" Text="Ayarla ➔" VerticalAlignment="Center" FontSize="10.5" FontWeight="Bold" Foreground="#0A84FF" Margin="6,0,0,0" />
                             </Grid>
                         </Button>
 
@@ -78,7 +82,7 @@
                                 <Grid Margin="0,0,0,6">
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                         <Ellipse x:Name="StreamThumbnailDot" Width="6" Height="6" Fill="#10B981" Margin="0,0,6,0" VerticalAlignment="Center" />
-                                        <TextBlock Text="PS5 Remote Play Canlı Akış" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource textSecondaryBrush}" VerticalAlignment="Center" />
+                                        <TextBlock x:Name="StreamThumbnailTitle" Text="PS5 Remote Play Canlı Akış" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource textSecondaryBrush}" VerticalAlignment="Center" />
                                     </StackPanel>
                                     <TextBlock x:Name="StreamThumbnailBadge" Text="1080p CANLI" HorizontalAlignment="Right" FontSize="9" FontFamily="Consolas" FontWeight="Medium" Foreground="#38BDF8" VerticalAlignment="Center" />
                                 </Grid>
@@ -125,8 +129,19 @@
                                     </StackPanel>
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                                         <TextBlock x:Name="TvStatusLabel" Text="{Binding TvStatusText}" FontSize="10.5" Foreground="{DynamicResource textSecondaryBrush}" Margin="0,0,8,0" VerticalAlignment="Center" />
-                                        <Button Content="Değiştir" Padding="6,2" FontSize="9.5" Style="{StaticResource SecondaryButton}" Click="OnReinstall" />
+                                        <Button x:Name="TvActionButton" Content="Ayarla" Padding="6,2" FontSize="9.5" Style="{StaticResource SecondaryButton}" Click="OnTvActionButton" />
                                     </StackPanel>
+                                </Grid>
+
+                                <Separator Margin="0,6" Background="{DynamicResource borderBrush}" />
+
+                                <!-- Masaüstü Altyazı HUD Satırı -->
+                                <Grid Margin="0,2">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Ellipse x:Name="OverlayStatusDot" Width="7" Height="7" Fill="#94A3B8" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="PC Ekran Altyazısı" FontWeight="SemiBold" FontSize="11.5" Foreground="{DynamicResource textPrimaryBrush}" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                    <Button x:Name="OverlayToggleButton" Content="Kapalı" HorizontalAlignment="Right" Padding="6,2" FontSize="9.5" Style="{StaticResource SecondaryButton}" Click="OnToggleOverlayButton" />
                                 </Grid>
 
                                 <Separator Margin="0,6" Background="{DynamicResource borderBrush}" />
@@ -224,16 +239,16 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <RadioButton x:Name="TabOcrArea" Grid.Column="0" Content="🖥️ Oyun Okuma Alanı" IsChecked="True" Checked="OnTabChanged"
-                                     Style="{StaticResource SegmentButton}" FontSize="11" />
+                        <RadioButton x:Name="TabOcrArea" Grid.Column="0" Content="🔍 Okuma Alanı" IsChecked="True" Checked="OnTabChanged"
+                                     Style="{StaticResource SegmentButton}" FontSize="10.5" />
                         <RadioButton x:Name="TabDisplay" Grid.Column="1" Content="📺 TV Görünümü" Checked="OnTabChanged"
-                                     Style="{StaticResource SegmentButton}" FontSize="11" />
-                        <RadioButton x:Name="TabModels" Grid.Column="2" Content="🧠 Çeviri &amp; Modeller" Checked="OnTabChanged"
-                                     Style="{StaticResource SegmentButton}" FontSize="11" />
-                        <RadioButton x:Name="TabSystem" Grid.Column="3" Content="🔗 Bağlantı &amp; Sistem" Checked="OnTabChanged"
-                                     Style="{StaticResource SegmentButton}" FontSize="11" />
-                        <RadioButton x:Name="TabGuide" Grid.Column="4" Content="📖 Hızlı Rehber" Checked="OnTabChanged"
-                                     Style="{StaticResource SegmentButton}" FontSize="11" />
+                                     Style="{StaticResource SegmentButton}" FontSize="10.5" />
+                        <RadioButton x:Name="TabModels" Grid.Column="2" Content="🧠 Modeller" Checked="OnTabChanged"
+                                     Style="{StaticResource SegmentButton}" FontSize="10.5" />
+                        <RadioButton x:Name="TabSystem" Grid.Column="3" Content="🔗 Bağlantı" Checked="OnTabChanged"
+                                     Style="{StaticResource SegmentButton}" FontSize="10.5" />
+                        <RadioButton x:Name="TabGuide" Grid.Column="4" Content="📖 Rehber" Checked="OnTabChanged"
+                                     Style="{StaticResource SegmentButton}" FontSize="10.5" />
                     </Grid>
                 </Border>
 
@@ -242,8 +257,7 @@
                     <Grid>
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
                             <Button Content="Yeniden Kur..." Style="{StaticResource SecondaryButton}" Margin="0,0,8,0" Click="OnReinstall" />
-                            <Button Content="Sıfırla (0-la)" Style="{StaticResource SecondaryButton}" Margin="0,0,8,0" Foreground="#FF453A" Click="OnResetAll" />
-                            <Button Content="GameTranslator Hakkında" Style="{StaticResource SecondaryButton}" Click="OnAbout" />
+                            <Button Content="Sıfırla (0-la)" Style="{StaticResource SecondaryButton}" Foreground="#FF453A" Click="OnResetAll" />
                         </StackPanel>
                         <Button Content="Bitti" HorizontalAlignment="Right" MinWidth="84" MinHeight="32"
                                 Background="#0A84FF" Foreground="White" BorderThickness="0" FontWeight="SemiBold" Cursor="Hand" Click="OnDone">
@@ -281,6 +295,20 @@
                                 <Button x:Name="PresetTopBanner" Content="Üst Bölge (Görevler)" Tag="TopBanner" Click="OnPresetClick" Style="{StaticResource SecondaryButton}" Margin="0,0,6,0" Padding="10,4" FontSize="10.5" />
                                 <Button x:Name="PresetCustom" Content="Özel Kutu" Tag="Custom" Click="OnPresetClick" Style="{StaticResource SecondaryButton}" Padding="10,4" FontSize="10.5" />
                             </StackPanel>
+
+                            <!-- Hızlı Görüntü Kaynağı ve Hedef Pencere Seçimi (Yakalama Kartı / OBS / Belirli Pencere) -->
+                            <Border x:Name="QuickSourcePickerCard" Background="#111622" BorderBrush="#1F293D" BorderThickness="1" CornerRadius="8" Padding="10,8" Margin="0,0,0,10" Visibility="Collapsed">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="🎯 Yakalanacak Pencere / Ekran:" FontWeight="SemiBold" FontSize="11" Foreground="#38BDF8" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                    <ComboBox x:Name="QuickSourceWindowComboBox" Grid.Column="1" SelectionChanged="OnQuickSourceWindowSelected" MinHeight="28" FontSize="11" VerticalContentAlignment="Center" />
+                                    <Button Grid.Column="2" Content="🔄 Pencereleri Yenile" Click="OnRefreshWindows" Style="{StaticResource SecondaryButton}" Padding="8,3" FontSize="10" Margin="8,0,0,0" ToolTip="Açık oyun ve OBS pencerelerini yeniden listele" />
+                                </Grid>
+                            </Border>
 
                             <!-- 16:9 GERÇEK OYUN GÖRÜNTÜSÜ & OCR ALGILAMA KUTUSU -->
                             <Border Background="#090A0D" BorderBrush="#33FFFFFF" BorderThickness="1.5" CornerRadius="8" Height="230" ClipToBounds="True" Margin="0,0,0,10">
@@ -487,11 +515,15 @@
                             <!-- Checkbox'lar & Test Butonu -->
                             <Grid Margin="0,0,0,12">
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <CheckBox x:Name="BoldCheck" Content="Kalın yazı (Bold)" Checked="OnBold" Unchecked="OnBold" Margin="0,0,14,0" VerticalAlignment="Center" FontSize="11" />
-                                    <CheckBox x:Name="DubbingCheck" Content="Türkçe Dublaj (Ses)" Checked="OnDubbing" Unchecked="OnDubbing" Margin="0,0,14,0" VerticalAlignment="Center" FontSize="11" />
-                                    <CheckBox x:Name="MutePcCheck" Content="PC Sesini Kapat (Mute)" Checked="OnMutePc" Unchecked="OnMutePc" VerticalAlignment="Center" FontSize="11" IsChecked="True" />
+                                    <CheckBox x:Name="DesktopOverlayCheck" Content="🖥️ PC Ekranında Altyazı (Şeffaf Katman)" Checked="OnDesktopOverlayToggle" Unchecked="OnDesktopOverlayToggle" Margin="0,0,14,0" VerticalAlignment="Center" FontSize="11" FontWeight="SemiBold" IsChecked="False" />
+                                    <CheckBox x:Name="BoldCheck" Content="Kalın (Bold)" Checked="OnBold" Unchecked="OnBold" Margin="0,0,14,0" VerticalAlignment="Center" FontSize="11" />
+                                    <CheckBox x:Name="DubbingCheck" Content="Türkçe Dublaj" Checked="OnDubbing" Unchecked="OnDubbing" Margin="0,0,14,0" VerticalAlignment="Center" FontSize="11" />
+                                    <CheckBox x:Name="MutePcCheck" Content="PC Sesini Kapat" Checked="OnMutePc" Unchecked="OnMutePc" VerticalAlignment="Center" FontSize="11" IsChecked="True" />
                                 </StackPanel>
-                                <Button Content="📺 TV'ye Anında Test Gönder" HorizontalAlignment="Right" Click="OnTestSubtitle" Style="{StaticResource SecondaryButton}" Padding="10,4" FontSize="10.5" FontWeight="SemiBold" />
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                    <Button Content="📍 Altyazıyı Konumlandır" Click="OnDragOverlayPosition" Style="{StaticResource SecondaryButton}" Padding="9,4.5" FontSize="10.5" Margin="0,0,8,0" ToolTip="3 monitörlü veya özel kurulumlarda altyazıyı istediğiniz ekrana sürükleyin" />
+                                    <Button Content="✨ Ekrana &amp; TV'ye Test Gönder" Click="OnTestSubtitle" Style="{StaticResource SecondaryButton}" Padding="11,4.5" FontSize="10.5" FontWeight="Bold" />
+                                </StackPanel>
                             </Grid>
 
                             <!-- CANLI TV ÖNİZLEME (16:9 Ekran Çerçevesi) -->
@@ -516,55 +548,121 @@
                         <!-- 3. SEKME: ÇEVİRİ & MODELLER                                -->
                         <!-- ========================================================= -->
                         <StackPanel x:Name="PanelModels" Visibility="Collapsed">
-                            <TextBlock Text="Hangi Çeviri Modelini Seçmelisiniz?" FontWeight="Bold" FontSize="13.5" Foreground="{DynamicResource textPrimaryBrush}" Margin="0,0,0,12" />
-
-                            <!-- Model 1: DirectML Yerel Model (Önerilen) -->
-                            <Border Background="#1A2234" BorderBrush="#2563EB" BorderThickness="1.5" CornerRadius="8" Padding="12" Margin="0,0,0,10">
+                            <!-- 0ms TOPLULUK OYUN YAMALARI KARTI -->
+                            <Border Background="#161B26" BorderBrush="#10B981" BorderThickness="1.5" CornerRadius="10" Padding="14" Margin="0,0,0,12">
                                 <StackPanel>
-                                    <Grid Margin="0,0,0,4">
-                                        <TextBlock Text="🖥️ Donanım Hızlandırmalı Yerel Yapay Zeka (DirectML)" FontWeight="Bold" FontSize="12" Foreground="White" VerticalAlignment="Center" />
-                                        <Border HorizontalAlignment="Right" Background="#1F10B981" CornerRadius="10" Padding="8,2">
-                                            <StackPanel Orientation="Horizontal">
-                                                <Ellipse Width="5" Height="5" Fill="#10B981" Margin="0,0,4,0" VerticalAlignment="Center" />
-                                                <TextBlock Text="Aktif / Önerilen" FontSize="9.5" FontWeight="Bold" Foreground="#10B981" VerticalAlignment="Center" />
-                                            </StackPanel>
-                                        </Border>
+                                    <Grid Margin="0,0,0,10">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="🎮" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                            <TextBlock Text="Topluluk Oyun Yamaları (0 ms Gecikme)" FontWeight="Bold" FontSize="13" Foreground="#10B981" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                            <CheckBox x:Name="CheckCommunityPatches" Content="Aktif" IsChecked="True" Checked="OnPatchToggleChanged" Unchecked="OnPatchToggleChanged" Foreground="#10B981" FontWeight="Bold" FontSize="11.5" VerticalAlignment="Center" Margin="0,0,12,0" Cursor="Hand" />
+                                            <Border Background="#1F10B981" CornerRadius="10" Padding="8,3">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Ellipse Width="6" Height="6" Fill="#10B981" Margin="0,0,5,0" VerticalAlignment="Center" />
+                                                    <TextBlock Text="%100 İnsan Çevirisi" FontSize="10" FontWeight="Bold" Foreground="#10B981" VerticalAlignment="Center" />
+                                                </StackPanel>
+                                            </Border>
+                                        </StackPanel>
                                     </Grid>
-                                    <TextBlock Text="Bilgisayarınızın ekran kartını (DirectML) ve CPU'sunu kullanarak tamamen çevrimdışı, sıfır gecikmeli çeviri yapar. Kota ve internet sınırı yoktur."
-                                               FontSize="11" Foreground="{DynamicResource textSecondaryBrush}" TextWrapping="Wrap" />
-                                </StackPanel>
-                            </Border>
 
-                            <!-- Model 2: Google Gemini 1.5 Flash -->
-                            <Border Background="#111622" BorderBrush="#1F293D" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,10">
-                                <StackPanel>
-                                    <TextBlock Text="✨ Google Gemini 1.5 Flash (En Yüksek Kalite)" FontWeight="Bold" FontSize="12" Foreground="White" Margin="0,0,0,4" />
-                                    <TextBlock Text="Oyun jargonu ve argo çevirilerinde insan düzeyinde en doğru Türkçe altyazı kalitesini sunar." FontSize="11" Foreground="{DynamicResource textSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,8" />
-                                    <Grid>
+                                    <!-- Desteklenen Oyunlar ve Canlı Yama Durumu Metni -->
+                                    <Border Background="#0E121B" CornerRadius="6" Padding="12,10" Margin="0,0,0,10">
+                                        <TextBlock x:Name="PatchStatusText" Text="✅ Desteklenen Oyunlar taranıyor..." FontSize="11" FontWeight="SemiBold" Foreground="#38BDF8" TextWrapping="Wrap" />
+                                    </Border>
+
+                                    <!-- Aksiyon Butonları (Otomatik Tara & İçe Aktar) -->
+                                    <Grid Margin="0,0,0,10">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <PasswordBox x:Name="GeminiKeyInput" MinHeight="30" VerticalContentAlignment="Center" Margin="0,0,8,0" />
-                                        <Button Grid.Column="1" Content="Kaydet" Click="OnGeminiSave" Style="{StaticResource SecondaryButton}" Padding="10,3" FontSize="11" />
+                                        <Button Grid.Column="0" Content="🔍 Paketleri Tara ve Güncelle" Click="OnScanPatchesClick" Style="{StaticResource PrimaryButton}" Padding="14,6" FontSize="11" FontWeight="SemiBold" Margin="0,0,8,0" ToolTip="Hem yerel diskteki paketleri (%LOCALAPPDATA%\GameTranslator\packs) hem de resmi depodaki en güncel paketleri otomatik tarar ve eşler" />
+                                        <Button Grid.Column="1" Content="📁 Yama Yükle (.json, .srt)" Click="OnImportPatchClick" Style="{StaticResource SecondaryButton}" Padding="12,6" FontSize="11" FontWeight="SemiBold" ToolTip="Kendi hazırladığınız veya indirdiğiniz özel yama dosyasını içeri aktarın" />
                                     </Grid>
+
+                                    <TextBlock Text="💡 Yamada kayıtlı olan replikler oyun esnasında otomatik tanınır ve 0 milisaniyede televizyonunuza yansıtılır. Yamada olmayan yan diyaloglar seçtiğiniz yapay zeka motoruyla tamamlanır." FontSize="10.5" Foreground="#94A3B8" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
+
+                            <TextBlock Text="Yapay Zeka &amp; Çeviri Motoru Seçimi" FontWeight="Bold" FontSize="13.5" Foreground="{DynamicResource textPrimaryBrush}" Margin="0,0,0,4" />
+                            <TextBlock Text="Yamada yer almayan replikler için kullanılacak çeviri motorunu belirleyin." Style="{StaticResource HintText}" FontSize="11" Margin="0,0,0,12" />
+
+                            <!-- Model 1: DirectML Yerel Model -->
+                            <Border x:Name="BorderDirectMl" Background="#161B26" BorderBrush="#0A84FF" BorderThickness="1.5" CornerRadius="8" Padding="14" Margin="0,0,0,10"
+                                    MouseLeftButtonUp="OnCardDirectMlClick" Cursor="Hand">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,6">
+                                        <RadioButton x:Name="RadioModelDirectMl" GroupName="TranslationModelGroup" Checked="OnModelSelected"
+                                                     Content="🖥️ Donanım Hızlandırmalı Yerel Yapay Zeka (DirectML)" FontWeight="Bold" FontSize="12" Foreground="White" VerticalAlignment="Center" IsChecked="True" Cursor="Hand" />
+                                        <Border x:Name="BadgeDirectMl" HorizontalAlignment="Right" Background="#1F10B981" CornerRadius="10" Padding="8,2">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Ellipse Width="5" Height="5" Fill="#10B981" Margin="0,0,4,0" VerticalAlignment="Center" />
+                                                <TextBlock Text="Aktif / Seçili" FontSize="9.5" FontWeight="Bold" Foreground="#10B981" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Border>
+                                    </Grid>
+                                    <TextBlock Text="Bilgisayarınızın ekran kartını (DirectML) ve CPU'sunu kullanarak tamamen çevrimdışı, sıfır gecikmeli çeviri yapar. Kota ve internet gerektirmez."
+                                               FontSize="11" Foreground="{DynamicResource textSecondaryBrush}" TextWrapping="Wrap" Margin="22,0,0,0" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Model 2: Google Gemini Flash -->
+                            <Border x:Name="BorderGemini" Background="#111622" BorderBrush="#1F293D" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,0,0,10"
+                                    MouseLeftButtonUp="OnCardGeminiClick" Cursor="Hand">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,6">
+                                        <RadioButton x:Name="RadioModelGemini" GroupName="TranslationModelGroup" Checked="OnModelSelected"
+                                                     Content="✨ Google Gemini 2.0 / 2.5 Flash (En Yüksek Çeviri Kalitesi)" FontWeight="Bold" FontSize="12" Foreground="White" VerticalAlignment="Center" Cursor="Hand" />
+                                        <Border x:Name="BadgeGemini" HorizontalAlignment="Right" Background="#1F10B981" CornerRadius="10" Padding="8,2" Visibility="Collapsed">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Ellipse Width="5" Height="5" Fill="#10B981" Margin="0,0,4,0" VerticalAlignment="Center" />
+                                                <TextBlock Text="Aktif / Seçili" FontSize="9.5" FontWeight="Bold" Foreground="#10B981" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Border>
+                                    </Grid>
+                                    <TextBlock Text="Oyun jargonu, sokak ağzı ve diyaloglarda insan düzeyinde en akıcı Türkçe altyazı deneyimini sunar." FontSize="11" Foreground="{DynamicResource textSecondaryBrush}" TextWrapping="Wrap" Margin="22,0,0,8" />
+                                    <Grid Margin="22,0,0,6">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <PasswordBox x:Name="GeminiKeyInput" MinHeight="32" VerticalContentAlignment="Center" Margin="0,0,8,0" />
+                                        <Button Grid.Column="1" Content="Kaydet ve Aktif Et" Click="OnGeminiSave" Style="{StaticResource SecondaryButton}" Padding="12,4" FontWeight="Bold" FontSize="11" />
+                                    </Grid>
+                                    <TextBlock Margin="22,0,0,0">
+                                        <Hyperlink NavigateUri="https://aistudio.google.com/apikey" RequestNavigate="OnHyperlink">
+                                            <Run Text="Ücretsiz Google Gemini API anahtarı alın ➔" Foreground="#0A84FF" FontSize="11" />
+                                        </Hyperlink>
+                                    </TextBlock>
                                 </StackPanel>
                             </Border>
 
                             <!-- Model 3: DeepL API -->
-                            <Border Background="#111622" BorderBrush="#1F293D" BorderThickness="1" CornerRadius="8" Padding="12">
+                            <Border x:Name="BorderDeepL" Background="#111622" BorderBrush="#1F293D" BorderThickness="1" CornerRadius="8" Padding="14"
+                                    MouseLeftButtonUp="OnCardDeepLClick" Cursor="Hand">
                                 <StackPanel>
-                                    <TextBlock Text="🌐 DeepL API (Resmi Servis)" FontWeight="Bold" FontSize="12" Foreground="White" Margin="0,0,0,4" />
-                                    <TextBlock Text="DeepL REST API anahtarınız ile profesyonel çeviri." FontSize="11" Foreground="{DynamicResource textSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,8" />
                                     <Grid Margin="0,0,0,6">
+                                        <RadioButton x:Name="RadioModelDeepL" GroupName="TranslationModelGroup" Checked="OnModelSelected"
+                                                     Content="🌐 DeepL API (Resmi Servis)" FontWeight="Bold" FontSize="12" Foreground="White" VerticalAlignment="Center" Cursor="Hand" />
+                                        <Border x:Name="BadgeDeepL" HorizontalAlignment="Right" Background="#1F10B981" CornerRadius="10" Padding="8,2" Visibility="Collapsed">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Ellipse Width="5" Height="5" Fill="#10B981" Margin="0,0,4,0" VerticalAlignment="Center" />
+                                                <TextBlock Text="Aktif / Seçili" FontSize="9.5" FontWeight="Bold" Foreground="#10B981" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Border>
+                                    </Grid>
+                                    <TextBlock Text="Resmi DeepL REST API hesabınız ile profesyonel altyazı çevirisi." FontSize="11" Foreground="{DynamicResource textSecondaryBrush}" TextWrapping="Wrap" Margin="22,0,0,8" />
+                                    <Grid Margin="22,0,0,6">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <PasswordBox x:Name="DeepLKeyInput" MinHeight="30" VerticalContentAlignment="Center" Margin="0,0,8,0" />
-                                        <Button Grid.Column="1" Content="Kaydet ve dene" Click="OnDeepLSave" Style="{StaticResource SecondaryButton}" Padding="10,3" FontSize="11" />
+                                        <PasswordBox x:Name="DeepLKeyInput" MinHeight="32" VerticalContentAlignment="Center" Margin="0,0,8,0" />
+                                        <Button Grid.Column="1" Content="Kaydet ve Aktif Et" Click="OnDeepLSave" Style="{StaticResource SecondaryButton}" Padding="12,4" FontWeight="Bold" FontSize="11" />
                                     </Grid>
-                                    <TextBlock>
+                                    <TextBlock Margin="22,0,0,0">
                                         <Hyperlink NavigateUri="https://www.deepl.com/pro-api" RequestNavigate="OnHyperlink">
                                             <Run Text="Ücretsiz DeepL API anahtarı alın ➔" Foreground="#0A84FF" FontSize="11" />
                                         </Hyperlink>
@@ -592,16 +690,11 @@
 
                                     <TextBlock Text="Oyun görüntüsünün nereden okunacağını seçin. Capture Card veya OBS kullanıyorsanız PS5 Remote Play'e gerek kalmaz." FontSize="11" Foreground="{DynamicResource textSecondaryBrush}" Margin="0,0,0,10" TextWrapping="Wrap" />
 
-                                    <Grid Margin="0,0,0,10">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="*" />
-                                        </Grid.ColumnDefinitions>
-                                        <RadioButton x:Name="SourceRadioRemotePlay" Content="🎮 PS5 Remote Play" GroupName="VideoSourceGroup" Checked="OnVideoSourceChanged" IsChecked="True" Foreground="White" FontSize="11" VerticalAlignment="Center" />
-                                        <RadioButton Grid.Column="1" x:Name="SourceRadioCaptureCard" Content="📹 Yakalama Kartı" GroupName="VideoSourceGroup" Checked="OnVideoSourceChanged" Foreground="White" FontSize="11" VerticalAlignment="Center" />
-                                        <RadioButton Grid.Column="2" x:Name="SourceRadioDesktop" Content="🖥️ Masaüstü / OBS" GroupName="VideoSourceGroup" Checked="OnVideoSourceChanged" Foreground="White" FontSize="11" VerticalAlignment="Center" />
-                                    </Grid>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                        <RadioButton x:Name="SourceRadioRemotePlay" Content="🎮 PS5 Remote Play" GroupName="VideoSourceGroup" Checked="OnVideoSourceChanged" IsChecked="True" Foreground="White" FontSize="11" VerticalAlignment="Center" Margin="0,0,14,0" Cursor="Hand" />
+                                        <RadioButton x:Name="SourceRadioCaptureCard" Content="📹 Yakalama Kartı" GroupName="VideoSourceGroup" Checked="OnVideoSourceChanged" Foreground="White" FontSize="11" VerticalAlignment="Center" Margin="0,0,14,0" Cursor="Hand" />
+                                        <RadioButton x:Name="SourceRadioDesktop" Content="🖥️ Masaüstü / OBS" GroupName="VideoSourceGroup" Checked="OnVideoSourceChanged" Foreground="White" FontSize="11" VerticalAlignment="Center" Cursor="Hand" />
+                                    </StackPanel>
 
                                     <!-- Pencere / Monitör Seçimi Kartı (Masaüstü veya Capture Card seçildiğinde) -->
                                     <Border x:Name="SourceWindowPickerCard" Background="#0E121B" CornerRadius="6" Padding="10" Visibility="Collapsed">
@@ -640,7 +733,7 @@
                                     <Grid Margin="0,0,0,6">
                                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                             <TextBlock Text="{x:Static c:Glyphs.Tv}" Style="{StaticResource GlyphText}" FontSize="13" Foreground="#10B981" Margin="0,0,6,0" VerticalAlignment="Center" />
-                                            <TextBlock Text="Akıllı TV &amp; CouchSubs" FontWeight="SemiBold" FontSize="12" Foreground="White" VerticalAlignment="Center" />
+                                            <TextBlock Text="Akıllı TV &amp; GameTranslator" FontWeight="SemiBold" FontSize="12" Foreground="White" VerticalAlignment="Center" />
                                         </StackPanel>
                                         <TextBlock Text="Port 8787 (SSE)" HorizontalAlignment="Right" FontSize="10" FontFamily="Consolas" Foreground="#55FFFFFF" VerticalAlignment="Center" />
                                     </Grid>

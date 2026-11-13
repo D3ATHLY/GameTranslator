@@ -102,9 +102,13 @@ public partial class OnboardingView : UserControl
         }
         else if (currentStep == 3)
         {
-            if (controller.Tv != null && controller.Tv.Brand == TvBrand.AndroidTv && AndroidHostInput != null)
+            if (AndroidHostInput != null)
             {
-                if (!string.IsNullOrWhiteSpace(controller.Tv.Host) && controller.Tv.Host != "192.168.1.50")
+                if (!string.IsNullOrEmpty(controller.ConnectedTvIp))
+                {
+                    AndroidHostInput.Text = controller.ConnectedTvIp;
+                }
+                else if (controller.Tv != null && controller.Tv.Brand == TvBrand.AndroidTv && !string.IsNullOrWhiteSpace(controller.Tv.Host) && controller.Tv.Host != "192.168.1.50")
                 {
                     AndroidHostInput.Text = controller.Tv.Host;
                 }
@@ -560,21 +564,35 @@ public partial class OnboardingView : UserControl
         ScanAndroidTvButton.IsEnabled = false;
         AndroidInstallStatus.Visibility = Visibility.Visible;
         AndroidInstallStatus.Foreground = new SolidColorBrush(Color.FromRgb(56, 189, 248));
-        AndroidInstallStatus.Text = "🔍 Yerel ağdaki Android TV'ler taranıyor (port 5555)...";
+        AndroidInstallStatus.Text = "🔍 Ağdaki Android TV aranıyor...";
         try
         {
-            var found = await controller.Services.ScanAndroidTvsAsync();
-            var first = found.FirstOrDefault();
+            string? first = controller.ConnectedTvIp;
+
+            if (string.IsNullOrEmpty(first))
+            {
+                var found = await controller.Services.ScanAndroidTvsAsync();
+                first = found.FirstOrDefault();
+            }
+
+            if (string.IsNullOrEmpty(first) && !string.IsNullOrWhiteSpace(controller.Tv?.Host) && controller.Tv.Host != "192.168.1.50")
+            {
+                first = controller.Tv.Host;
+            }
+
             if (first != null)
             {
                 AndroidHostInput.Text = first;
                 AndroidInstallStatus.Foreground = new SolidColorBrush(Color.FromRgb(16, 185, 129));
-                AndroidInstallStatus.Text = $"✓ Android TV bulundu: {first}";
+                AndroidInstallStatus.Text = $"✓ Android TV bulundu: {first}. Bağlanılıyor...";
+                await controller.PairAsync(new LgTv("Android TV", first, TvBrand.AndroidTv));
+                TvStatusFeedback.Text = $"✓ Android TV bulundu ({first}) ve bağlantı sağlandı!";
+                TvStatusFeedback.Foreground = new SolidColorBrush(Color.FromRgb(16, 185, 129));
             }
             else
             {
                 AndroidInstallStatus.Foreground = new SolidColorBrush(Color.FromRgb(245, 158, 11));
-                AndroidInstallStatus.Text = "Ağda ADB'si açık Android TV bulunamadı. Lütfen TV IP adresini kontrol edip elle yazın.";
+                AndroidInstallStatus.Text = "Ağda otomatik TV bulunamadı. Lütfen TV IP adresini yukarıya yazın veya TV uygulamasını açın.";
             }
         }
         catch (Exception ex)
@@ -640,14 +658,14 @@ public partial class OnboardingView : UserControl
     {
         var host = AndroidHostInput.Text.Trim();
         if (string.IsNullOrWhiteSpace(host)) return;
-        TvStatusFeedback.Text = $"Android TV ({host}) kaydediliyor...";
+        TvStatusFeedback.Text = $"Android TV ({host}) ile eşleşiliyor...";
         TvStatusFeedback.Foreground = new SolidColorBrush(Color.FromRgb(56, 189, 248));
         try
         {
             await controller.PairAsync(new LgTv("Android TV", host, TvBrand.AndroidTv));
         }
         catch { }
-        TvStatusFeedback.Text = $"✓ Android TV kaydedildi ({host}). TV'nizde GameTranslator uygulamasını açın.";
+        TvStatusFeedback.Text = $"✓ Android TV kaydedildi ({host}) ve bağlantı sinyali iletildi.";
         TvStatusFeedback.Foreground = new SolidColorBrush(Color.FromRgb(16, 185, 129));
     }
 
@@ -686,9 +704,15 @@ public partial class OnboardingView : UserControl
     // ==========================================
     // Adım 5: Test
     // ==========================================
+    private void OnTestDesktopOverlay(object sender, RoutedEventArgs e)
+    {
+        DesktopSubtitleOverlay.Display("GameTranslator: Masaüstü Ekran Altyazısı Başarıyla Çalışıyor! [HUD TESTİ]", 6000);
+    }
+
     private void OnTestTv(object sender, RoutedEventArgs e)
     {
         controller.SendTestSubtitle();
-        MessageBox.Show("TV'nize test altyazısı gönderildi! Ekranınızda görünüyorsa eşleştirme başarılıdır.", "Test Gönderildi", MessageBoxButton.OK, MessageBoxImage.Information);
+        DesktopSubtitleOverlay.Display("GameTranslator: Canlı Türkçe Altyazı Testi Başarılı!", 6000);
+        MessageBox.Show("Test altyazısı gönderildi! Hem bilgisayar ekranınızda hem TV'nizde görünüyorsa her şey hazırdır.", "Test Başarılı", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 }

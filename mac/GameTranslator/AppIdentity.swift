@@ -6,7 +6,7 @@ import Foundation
 enum AppIdentity {
     static let name = "GameTranslator"
     static let tvAppId = "com.gametranslator.tv"
-    static let samsungAppId = "GameTranslatorT.GameTranslator"
+    static let samsungAppId = "GameTransT.GameTranslator"
     static let tvGuideURL = URL(string: "https://github.com/Sefflex/GameTranslate/blob/main/docs/tv-kurulum.md")!
     static let sourceURL = URL(string: "https://github.com/Sefflex/GameTranslate")!
     static var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0" }

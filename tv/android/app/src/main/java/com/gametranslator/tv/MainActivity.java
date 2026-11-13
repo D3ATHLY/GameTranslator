@@ -56,10 +56,13 @@ public class MainActivity extends Activity {
         webView = new WebView(this);
         webView.setBackgroundColor(Color.TRANSPARENT);
         webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+        WebView.setWebContentsDebuggingEnabled(true);
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setAllowFileAccess(true);
+        settings.setAllowFileAccessFromFileURLs(true);
+        settings.setAllowUniversalAccessFromFileURLs(true);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         // Türkçe dublaj: bilgisayardan gelen ses kumandaya basılmadan çalabilsin.
         settings.setMediaPlaybackRequiresUserGesture(false);
@@ -70,6 +73,19 @@ public class MainActivity extends Activity {
         // Ölçek fiziksel piksel başına yüzde: 1920 CSS pikseli ekranın tam genişliğine sığar (1080p'de %100).
         webView.setInitialScale(fitScalePercent());
         webView.addJavascriptInterface(new Bridge(), "AndroidTV");
+        webView.setWebChromeClient(new android.webkit.WebChromeClient() {
+            @Override
+            public boolean onConsoleMessage(android.webkit.ConsoleMessage consoleMessage) {
+                android.util.Log.d("TVConsole", consoleMessage.message() + " [" + consoleMessage.sourceId() + ":" + consoleMessage.lineNumber() + "]");
+                return true;
+            }
+        });
+        webView.setWebViewClient(new android.webkit.WebViewClient() {
+            @Override
+            public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
+                android.util.Log.e("TVConsole", "WebView error " + errorCode + ": " + description + " at " + failingUrl);
+            }
+        });
         root.addView(webView);
         setContentView(root);
         webView.loadUrl("file:///android_asset/tv/index.html");
@@ -95,8 +111,14 @@ public class MainActivity extends Activity {
     }
 
     private static String paramsOf(Intent intent) {
-        String params = intent == null ? null : intent.getStringExtra("params");
-        return params == null ? "" : params;
+        if (intent == null) return "";
+        String params = intent.getStringExtra("params");
+        if (params != null && !params.isEmpty()) return params;
+        String server = intent.getStringExtra("server");
+        if (server != null && !server.isEmpty()) {
+            return "{\"server\":\"" + server + "\"}";
+        }
+        return "";
     }
 
     /** Geri ve renk tuşlarını sayfaya bildirir; diğerleri WebView'e kendiliğinden gider. */

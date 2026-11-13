@@ -14,6 +14,21 @@ public static class Program
     public static void Main(string[] args)
     {
         try { VelopackApp.Build().Run(); } catch { }
+
+        // Eğer arka planda takılı kalmış eski bir kopya varsa port 8787'yi ve TV bağlantısını kilitlemesin diye sonlandır
+        try
+        {
+            var current = System.Diagnostics.Process.GetCurrentProcess();
+            foreach (var p in System.Diagnostics.Process.GetProcessesByName("GameTranslator"))
+            {
+                if (p.Id != current.Id)
+                {
+                    try { p.Kill(); } catch { }
+                }
+            }
+        }
+        catch { }
+
         var app = new App();
         app.InitializeComponent();
         app.Run();

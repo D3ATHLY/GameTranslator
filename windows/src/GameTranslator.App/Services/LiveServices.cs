@@ -21,6 +21,15 @@ public sealed class LiveServices : IAppServices
     public ITextTranslator? MakeOnlineTranslator(string key, ITextTranslator? fallback) => new DeepLTranslator(key, fallback);
 
     public Task<OnlineKeyCheck> CheckOnlineKeyAsync(string key) => DeepLTranslator.CheckAsync(key);
+
+    public ITextTranslator? MakeGeminiTranslator(string key, ITextTranslator? fallback) =>
+        new AiTranslator(AiProvider.Gemini, key, model: null, fallback);
+
+    public async Task<OnlineKeyCheck> CheckGeminiKeyAsync(string key)
+    {
+        var result = await AiTranslator.TestAsync(AiProvider.Gemini, key, model: null);
+        return new OnlineKeyCheck(result.State);
+    }
     public IDubbingModel? Dubbing { get; } = PocketDubbingModel.EngineBundled ? new PocketDubbingModel() : null;
     public IDubbingModel? FastDubbing { get; } = WindowsVoiceModel.Available ? new WindowsVoiceModel() : null;
     public IAudioOutput? Audio { get; } = new WindowsAudioOutput();
@@ -47,8 +56,26 @@ public sealed class LiveServices : IAppServices
 
     public async Task<TvPairing> PairTvAsync(LgTv tv, string? key, string server)
     {
-        // Bilgisayar Android TV'yi denetlemez; TV uygulaması bilgisayarı kendisi bulur.
-        if (tv.Brand == TvBrand.AndroidTv) return new TvPairing("", true);
+        // Android TV: Doğrudan ADB üzerinden TV uygulamasını PC sunucu adresi parametresiyle başlat
+        if (tv.Brand == TvBrand.AndroidTv)
+        {
+            var host = tv.Host;
+            try
+            {
+                if (string.IsNullOrEmpty(host) || !await AndroidTvInstaller.IsReachableAsync(host, timeout: TimeSpan.FromMilliseconds(800)))
+                {
+                    var found = await AndroidTvInstaller.ScanAsync();
+                    if (found.Count > 0) host = found[0];
+                }
+                if (!string.IsNullOrEmpty(host))
+                {
+                    var installer = new AndroidTvInstaller(host, DataDirectory("adb"));
+                    await installer.StartAppWithServerAsync(server);
+                }
+            }
+            catch { }
+            return new TvPairing("", true);
+        }
         if (tv.Brand == TvBrand.Samsung)
         {
             try
@@ -106,7 +133,11 @@ public sealed class LiveServices : IAppServices
 
     public IKeeper MakeKeeper(LgTv tv, string? key, IReadOnlyDictionary<string, string> parameters, Func<bool> appConnected, Action<LgTv> onMoved)
     {
-        if (tv.Brand == TvBrand.AndroidTv) return new IdleKeeper();
+        if (tv.Brand == TvBrand.AndroidTv)
+        {
+            var serverUrl = parameters.TryGetValue("server", out var s) ? s : "http://192.168.1.100:8787";
+            return new AndroidTvKeeper(tv, serverUrl, DataDirectory("adb"), appConnected, onMoved);
+        }
         if (tv.Brand == TvBrand.Samsung)
         {
             var samsungLocator = new TvLocator(tv, async target =>
@@ -308,6 +339,100 @@ public sealed class LiveServices : IAppServices
 
     public ITextReader? MakeReader(string language) => WindowsOcrReader.Create(language);
     public bool HasOcrLanguage(string language) => WindowsOcrReader.HasLanguage(language);
+
+    /// <summary>Android TV: TV açıkken ADB üzerinden uygulamanın açık ve PC'ye bağlı kalmasını sağlar. IP değişirse dinamik olarak ağda bulur.</summary>
+    private sealed class AndroidTvKeeper(LgTv tv, string serverUrl, string keyDir, Func<bool> appConnected, Action<LgTv>? onMoved = null) : IKeeper
+    {
+        private CancellationTokenSource? cts;
+        private string host = tv.Host;
+
+        public void Start(TimeSpan interval)
+        {
+            cts = new CancellationTokenSource();
+            _ = Task.Run(async () =>
+            {
+                var token = cts.Token;
+                while (!token.IsCancellationRequested)
+                {
+                    if (!appConnected())
+                    {
+                        var connected = false;
+                        if (host.Length > 0 && await AndroidTvInstaller.IsReachableAsync(host, timeout: TimeSpan.FromMilliseconds(800)))
+                        {
+                            try
+                            {
+                                var installer = new AndroidTvInstaller(host, keyDir);
+                                await installer.StartAppWithServerAsync(serverUrl, token);
+                                connected = true;
+                            }
+                            catch { }
+                        }
+
+                        // Kayıtlı statik IP'ye ulaşılamadıysa ağda dinamik tarama yapıp TV'nin yeni IP'sini bul!
+                        if (!connected && !token.IsCancellationRequested)
+                        {
+                            try
+                            {
+                                var found = await AndroidTvInstaller.ScanAsync(cancellationToken: token);
+                                if (found.Count > 0)
+                                {
+                                    var newHost = found[0];
+                                    if (newHost != host)
+                                    {
+                                        host = newHost;
+                                        onMoved?.Invoke(tv with { Host = newHost });
+                                    }
+                                    var installer = new AndroidTvInstaller(newHost, keyDir);
+                                    await installer.StartAppWithServerAsync(serverUrl, token);
+                                }
+                            }
+                            catch { }
+                        }
+                    }
+                    try { await Task.Delay(interval, token); } catch { break; }
+                }
+            });
+        }
+
+        public void Stop()
+        {
+            cts?.Cancel();
+            cts = null;
+        }
+
+        public void Reconnect()
+        {
+            if (!appConnected())
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        if (host.Length > 0 && await AndroidTvInstaller.IsReachableAsync(host))
+                        {
+                            var installer = new AndroidTvInstaller(host, keyDir);
+                            await installer.StartAppWithServerAsync(serverUrl);
+                            return;
+                        }
+
+                        var found = await AndroidTvInstaller.ScanAsync();
+                        if (found.Count > 0)
+                        {
+                            var newHost = found[0];
+                            if (newHost != host)
+                            {
+                                host = newHost;
+                                onMoved?.Invoke(tv with { Host = newHost });
+                            }
+                            var installer = new AndroidTvInstaller(newHost, keyDir);
+                            await installer.StartAppWithServerAsync(serverUrl);
+                        }
+                    }
+                    catch { }
+                });
+            }
+        }
+    }
 
     /// <summary>Denetlenemeyen TV'ler için: TV uygulaması kendisi bağlanır.</summary>
     private sealed class IdleKeeper : IKeeper

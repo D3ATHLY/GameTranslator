@@ -131,6 +131,9 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
     /// <summary>false ise altyazı olayları TV'lere gitmez (altyazı yalnız bilgisayar ekranında); OBS katmanı almaya devam eder.</summary>
     public bool SendsToTv { get; set; } = true;
 
+    /// <summary>Son bağlanan veya /hello sorgulayan istemcinin IP adresi (TV adresi).</summary>
+    public string? LastClientAddress { get; private set; }
+
     public int ConnectedClients
     {
         get { lock (gate) return TvCount(); }
@@ -294,11 +297,23 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
             var target = parts.Length > 1 ? parts[1] : "";
             var path = target.Split('?')[0];
 
-            if (method == "OPTIONS") await RespondAndClose(tcp, "204 No Content");
+            if (method == "OPTIONS")
+            {
+                var optionsHead = "HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nConnection: close\r\n\r\n";
+                await tcp.GetStream().WriteAsync(Encoding.ASCII.GetBytes(optionsHead));
+                tcp.Dispose();
+            }
             else if (method == "GET" && path == "/events") await OpenStream(tcp, target.Contains("viewer=obs", StringComparison.Ordinal));
             else if (method == "GET" && path == "/obs") await RespondAndClose(tcp, ObsOverlay, "text/html; charset=utf-8");
-            // TV uygulaması ağdaki bilgisayarı bu yanıtla tanır.
-            else if (method == "GET" && path == "/hello") await RespondAndClose(tcp, "200 OK", "{\"app\":\"GameTranslator\"}");
+            // TV uygulaması ağdaki bilgisayarı bu yanıtla tanır (Android TV hem gametranslator hem couchsubs arar).
+            else if (method == "GET" && path == "/hello")
+            {
+                if (tcp.Client.RemoteEndPoint is IPEndPoint ep && ep.Address.ToString() is { } ip && ip != "127.0.0.1" && ip != "::1")
+                {
+                    LastClientAddress = ip;
+                }
+                await RespondAndClose(tcp, "200 OK", "{\"app\":\"gametranslator\",\"name\":\"GameTranslator\",\"type\":\"gametrans\",\"legacy\":\"couchsubs\",\"product\":\"couchsubs\"}");
+            }
             else if (method == "GET" && FindFile(path) is { } file) await RespondAndClose(tcp, file.Data, file.Type);
             else await RespondAndClose(tcp, "404 Not Found");
         }
@@ -332,7 +347,7 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
 
     private static async Task RespondAndClose(TcpClient tcp, byte[] data, string type)
     {
-        var head = $"HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nContent-Type: {type}\r\nCache-Control: no-cache\r\n" +
+        var head = $"HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: {type}\r\nCache-Control: no-cache\r\n" +
                    $"Content-Length: {data.Length}\r\nConnection: close\r\n\r\n";
         var stream = tcp.GetStream();
         await stream.WriteAsync(Encoding.ASCII.GetBytes(head));
@@ -342,8 +357,14 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
 
     private static async Task RespondAndClose(TcpClient tcp, string status, string body = "")
     {
-        var head = $"HTTP/1.1 {status}\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n{body}";
-        await tcp.GetStream().WriteAsync(Encoding.ASCII.GetBytes(head));
+        var bodyBytes = Encoding.UTF8.GetBytes(body);
+        var head = $"HTTP/1.1 {status}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {bodyBytes.Length}\r\nConnection: close\r\n\r\n";
+        var stream = tcp.GetStream();
+        await stream.WriteAsync(Encoding.ASCII.GetBytes(head));
+        if (bodyBytes.Length > 0)
+        {
+            await stream.WriteAsync(bodyBytes);
+        }
         tcp.Dispose();
     }
 
@@ -352,11 +373,18 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
         var head = new StringBuilder()
             .Append("HTTP/1.1 200 OK\r\n")
             .Append("Content-Type: text/event-stream; charset=utf-8\r\n")
-            .Append("Cache-Control: no-cache\r\n")
+            .Append("Cache-Control: no-cache, no-transform\r\n")
             .Append("Connection: keep-alive\r\n")
-            .Append("Access-Control-Allow-Origin: *\r\n\r\n")
-            .Append("retry: 2000\n\n");
+            .Append("Access-Control-Allow-Origin: *\r\n")
+            .Append("Access-Control-Allow-Methods: GET, OPTIONS\r\n")
+            .Append("Access-Control-Allow-Headers: *\r\n\r\n")
+            .Append("retry: 2000\n\n")
+            .Append(": ping\n\n");
         var client = new Client(tcp, viewer);
+        if (!viewer && tcp.Client.RemoteEndPoint is IPEndPoint ep && ep.Address.ToString() is { } ip && ip != "127.0.0.1" && ip != "::1")
+        {
+            LastClientAddress = ip;
+        }
         int count;
         lock (gate)
         {

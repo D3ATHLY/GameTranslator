@@ -66,7 +66,7 @@ try
                 OnApprovalNeeded = () => Emit("approve"),
             };
             var (version, installed) = await installer.EnsureInstalledAsync(Option("--package"), Option("--version"), cancel.Token);
-            Emit("done", ("version", version), ("installed", installed));
+            Emit("done", ("version", (JsonNode?)JsonValue.Create(version)), ("installed", (JsonNode?)JsonValue.Create(installed)));
             return 0;
         }
 

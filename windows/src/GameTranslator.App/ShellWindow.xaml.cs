@@ -36,9 +36,17 @@ public partial class ShellWindow : Window
         };
         // Bilgisayarda gösterilecek çeviriler küçük, üstte duran bir kutuda çıkar.
         controller.PcResultReady += PcResultWindow.Display;
+        // Canlı oyun içi Türkçe altyazıyı doğrudan bilgisayar ekranında (HUD overlay) göster
+        Action<string, int, GameTranslator.Core.TextBox?> overlayHandler = (text, ms, box) => DesktopSubtitleOverlay.Display(text, ms, controller.Settings.Style, box);
+        controller.LiveSubtitleShown += overlayHandler;
+        controller.SubtitlesCleared += DesktopSubtitleOverlay.Clear;
+        DesktopSubtitleOverlay.Initialize();
         Closed += (_, _) =>
         {
             controller.PcResultReady -= PcResultWindow.Display;
+            controller.LiveSubtitleShown -= overlayHandler;
+            controller.SubtitlesCleared -= DesktopSubtitleOverlay.Clear;
+            DesktopSubtitleOverlay.Clear();
             hotkeys?.Dispose();
             SystemEvents.PowerModeChanged -= OnPowerModeChanged;
             controller.Dispose();

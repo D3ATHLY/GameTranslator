@@ -90,7 +90,18 @@
   function parseParams(raw) {
     if (!raw) return {};
     if (typeof raw === 'object') return raw;
-    try { return JSON.parse(raw) || {}; } catch (e) { return {}; }
+    try {
+      return JSON.parse(raw) || {};
+    } catch (e) {
+      try {
+        var unescaped = raw.replace(/\\"/g, '"');
+        return JSON.parse(unescaped) || {};
+      } catch (e2) {
+        var m = /"server"\s*:\s*"([^"]+)"/.exec(raw) || /server[:=]\s*(\S+)/.exec(raw);
+        if (m) return { server: m[1] };
+        return {};
+      }
+    }
   }
 
   // Parametrelerdeki sunucu ve HDMI tercihini uygular; sunucu değiştiyse yeniden bağlanır.
@@ -488,7 +499,10 @@
       finished = true;
       done(ok);
     }
-    request.onload = function () { finish(request.status === 200 && (request.responseText.indexOf('gametranslator') >= 0 || request.responseText.indexOf('gametrans') >= 0)); };
+    request.onload = function () {
+      var body = (request.responseText || '').toLowerCase();
+      finish(request.status === 200 && (body.indexOf('gametranslator') >= 0 || body.indexOf('gametrans') >= 0 || body.indexOf('couchsubs') >= 0));
+    };
     request.onerror = function () { finish(false); };
     request.ontimeout = function () { finish(false); };
     try {
@@ -501,16 +515,15 @@
   }
 
   function scanForServer() {
-    if (scanning || !platform.localAddress) return;
-    platform.localAddress(function (ip) {
-      var match = /^(\d+\.\d+\.\d+)\.\d+$/.exec(ip || '');
-      if (!match) return scheduleScan();
+    if (scanning) return;
+    var runWithSubnet = function (subnet) {
+      if (!subnet) return scheduleScan();
       scanning = true;
       var next = 1, active = 0, found = false;
       function pump() {
         while (!found && active < SCAN_PARALLEL && next <= 254) {
           active++;
-          tryAddress('http://' + match[1] + '.' + (next++) + ':' + SERVER_PORT);
+          tryAddress('http://' + subnet + '.' + (next++) + ':' + SERVER_PORT);
         }
         if (!found && !active && next > 254) {
           scanning = false;
@@ -532,7 +545,22 @@
         });
       }
       pump();
-    });
+    };
+
+    if (platform.localAddress) {
+      platform.localAddress(function (ip) {
+        var match = /^(\d+\.\d+\.\d+)\.\d+$/.exec(ip || '');
+        if (match) {
+          runWithSubnet(match[1]);
+        } else {
+          var fallbackMatch = /^http:\/\/(\d+\.\d+\.\d+)\.\d+/.exec(server || load('server') || '');
+          runWithSubnet(fallbackMatch ? fallbackMatch[1] : '192.168.1');
+        }
+      });
+    } else {
+      var fallbackMatch = /^http:\/\/(\d+\.\d+\.\d+)\.\d+/.exec(server || load('server') || '');
+      runWithSubnet(fallbackMatch ? fallbackMatch[1] : '192.168.1');
+    }
   }
 
   // --- Demo ---

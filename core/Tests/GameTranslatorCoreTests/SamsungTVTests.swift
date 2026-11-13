@@ -12,13 +12,13 @@ final class SamsungTVTests: XCTestCase {
     }
 
     func testLaunchMessageCarriesParametersAsMetaTag() throws {
-        let data = SamsungMessages.launch(appId: "GameTranslatorT.GameTranslator", params: ["server": "http://1.2.3.4:8787"])
+        let data = SamsungMessages.launch(appId: "GameTransT.GameTranslator", params: ["server": "http://1.2.3.4:8787"])
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertEqual(object["method"] as? String, "ms.channel.emit")
         let params = try XCTUnwrap(object["params"] as? [String: Any])
         XCTAssertEqual(params["event"] as? String, "ed.apps.launch")
         let inner = try XCTUnwrap(params["data"] as? [String: Any])
-        XCTAssertEqual(inner["appId"] as? String, "GameTranslatorT.GameTranslator")
+        XCTAssertEqual(inner["appId"] as? String, "GameTransT.GameTranslator")
         let meta = try XCTUnwrap(JSONSerialization.jsonObject(with: Data((inner["metaTag"] as? String ?? "").utf8)) as? [String: Any])
         XCTAssertEqual(meta["server"] as? String, "http://1.2.3.4:8787")
     }

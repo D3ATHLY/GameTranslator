@@ -9,6 +9,7 @@ using GameTranslator.Core;
 using GameTranslator.Core.Dubbing;
 using GameTranslator.Core.LgTv;
 using GameTranslator.RemotePlay;
+using GameTranslator.Translation;
 
 namespace GameTranslator.Shell;
 
@@ -92,6 +93,11 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         var ready = accountId is not null && console is not null && tv is not null && store.Load<string>(StoreKeys.TvKey) is not null;
         step = OnboardingStep.Done;
         server.ClientsChanged += OnClientsChanged;
+        _ = Task.Run(async () =>
+        {
+            try { await StartServerAsync(); } catch { }
+            try { await CommunityPatchManager.Shared.UpdateFromRemoteRepoAsync(); } catch { }
+        });
     }
 
     // --- Durum ---
@@ -112,6 +118,8 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
     public byte[]? AccountId => accountId;
     public string? AccountIdBase64 => accountId != null && accountId.Length > 0 ? Convert.ToBase64String(accountId) : null;
     public RegisteredConsole? Console => console;
+    public SubtitleServer Server => server;
+    public CommunityPatchManager PatchManager => CommunityPatchManager.Shared;
 
     public void SetRegisteredConsole(RegisteredConsole registered)
     {
@@ -133,14 +141,15 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         }
     }
     public StatusTone Ps5Tone => isRunning ? Ps5ToneFor(sessionState, isRunning) : (console is not null ? StatusTone.Good : StatusTone.Idle);
-    public int TvClients { get => tvClients; private set => Set(ref tvClients, value, [nameof(TvTone), nameof(TvStatusText)]); }
-    public StatusTone TvTone => tvClients > 0 ? StatusTone.Good : (tv is not null ? StatusTone.Good : StatusTone.Warning);
+    public int TvClients { get => tvClients; private set => Set(ref tvClients, value, [nameof(TvTone), nameof(TvStatusText), nameof(ConnectedTvIp)]); }
+    public string? ConnectedTvIp => server.LastClientAddress;
+    public StatusTone TvTone => tvClients > 0 ? StatusTone.Good : (tv is not null ? StatusTone.Warning : StatusTone.Idle);
     public string TvStatusText
     {
         get
         {
-            if (tvClients > 0) return $"{tvClients} Cihaz Bağlı (Hazır)";
-            if (tv is not null) return $"{tv.Name} (Hazır)";
+            if (tvClients > 0) return tvClients == 1 ? $"{tv?.Name ?? "TV"} (Bağlandı)" : $"{tvClients} TV Bağlandı";
+            if (tv is not null) return $"{tv.Name} (Bağlantı Bekleniyor)";
             return "TV uygulaması bekleniyor";
         }
     }
@@ -175,10 +184,14 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
             server.SendStyle(value.Style);
             if (old.Dubbing != value.Dubbing) DubbingSettingsChanged(old.Dubbing);
             if (isRunning && (old.SourceLanguage != value.SourceLanguage || old.TargetLanguage != value.TargetLanguage
-                              || old.OnlineTranslation != value.OnlineTranslation))
+                              || old.OnlineTranslation != value.OnlineTranslation || old.Engine != value.Engine))
             {
                 RefreshTranslatorStatus();
                 MakePipeline();
+            }
+            if (isRunning && (old.VideoSource != value.VideoSource || old.DesktopWindowName != value.DesktopWindowName || old.ScreenIndex != value.ScreenIndex))
+            {
+                RestartStream();
             }
         }
     }
@@ -227,6 +240,15 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         store.Save(StoreKeys.TvAppVersion, version);
         Changed(nameof(Tv));
         TvApp = new TvAppState(TvAppKind.UpToDate, version);
+
+        try
+        {
+            await StartServerAsync();
+            var serverAddr = ServerAddress(target);
+            await services.PairTvAsync(target, null, serverAddr);
+        }
+        catch { }
+
         return version;
     }
 
@@ -606,7 +628,9 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         // Oyunda henüz altyazı görülmediyse altyazı bölgesinin altına yakın tipik bir yer kullanılır.
         var region = settings.Region;
         var box = lastSubtitleBox ?? new TextBox(0.3, region.Bottom - 0.1, 0.7, region.Bottom - 0.03);
-        server.SendSubtitle(text["This is a test subtitle. Can you see it on top of the game?"], 8000, box);
+        var msg = text["This is a test subtitle. Can you see it on top of the game?"];
+        server.SendSubtitle(msg, 8000, box);
+        post(() => LiveSubtitleShown?.Invoke(msg, 8000, box));
     }
 
     /// <summary>
@@ -622,6 +646,7 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         {
             pipeline?.Reset();
             server.Clear();
+            post(() => SubtitlesCleared?.Invoke());
         }
         server.SendStyle(settings.Style);
         server.SendSubtitle(text[pause ? "Subtitle translation paused" : "Subtitle translation resumed"], 1800);
@@ -631,6 +656,15 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
     public event Action? SnapshotRequested;
 
     public void RequestSnapshot() => SnapshotRequested?.Invoke();
+
+    /// <summary>Canlı çeviri metni bilgisayar ekranında da (overlay) gösterilsin diye tetiklenir (metin, süre ms, kutu koordinatı).</summary>
+    public event Action<string, int, TextBox?>? LiveSubtitleShown;
+
+    /// <summary>Son altyazının algılandığı normalize ekran koordinatı kutusu.</summary>
+    public TextBox? LastSubtitleBox => lastSubtitleBox;
+
+    /// <summary>Altyazılar temizlendiğinde masaüstü overlay'i kapatılsın diye tetiklenir.</summary>
+    public event Action? SubtitlesCleared;
 
     /// <summary>Çeviri bilgisayarda da gösterilecekse (metin, kalma süresi ms) ile çağrılır.</summary>
     public event Action<string, int>? PcResultReady;
@@ -862,14 +896,35 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         if (DateTime.UtcNow < screenShownUntil) server.ClearScreen();
         screenShownUntil = default;
         SubtitlesPaused = false;
+        post(() => SubtitlesCleared?.Invoke());
         ActiveSourceLanguage = null;
         StopDubber();
         if (isRunning) sleep.End();
         IsRunning = false;
+        LastFrame = null;
+        LastSource = "";
+        LastTranslation = "";
         SessionState = SessionState.Disconnected(DisconnectKind.Stopped);
         UpdateTroubleClocks();
         firewallRuleSeen = false;
         ClearFirewallPrompt();
+    }
+
+    /// <summary>Görüntü giriş kaynağı (Remote Play, Yakalama Kartı, Masaüstü) değişince akışı anında yeniden başlatır.</summary>
+    public void RestartStream()
+    {
+        if (!isRunning) return;
+        session?.Stop();
+        session?.Dispose();
+        session = null;
+        LastFrame = null;
+
+        var stream = services.MakeStream(console, accountId, settings);
+        stream.StateChanged += state => post(() => SessionStateChanged(state));
+        stream.ConsoleMoved += moved => post(() => ConsoleMoved(moved));
+        stream.FrameReceived += HandleFrame;
+        stream.Start();
+        session = stream;
     }
 
     /// <summary>Bilgisayar uykudan uyanınca bağlantıları hemen yenile.</summary>
@@ -924,14 +979,20 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         OcrMissing = reader is null || !services.HasOcrLanguage(settings.SourceLanguage);
         if (reader is null) return;
         var built = new SubtitlePipeline(reader, MakeTranslator(), server, new ReadScheduler());
+        built.PackLookup = CommunityPatchManager.Shared.Match;
         built.PairShown += (source, translation) =>
         {
             var box = built.LastBox;
+            var ms = RegionTranslation.DisplayMilliseconds(translation);
             post(() =>
             {
                 LastSource = source;
                 LastTranslation = translation;
                 if (box is not null) lastSubtitleBox = box;
+                var targetBox = box ?? lastSubtitleBox ?? (settings.Region is { } r
+                    ? new TextBox(r.Left, r.Top, r.Right, r.Bottom)
+                    : null);
+                LiveSubtitleShown?.Invoke(translation, ms, targetBox);
             });
         };
         // Model bu arada inmiş olabilir; her çeviri sonucu durumu günceller.
@@ -943,9 +1004,24 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
     private ITextTranslator MakeTranslator()
     {
         var local = MakeLocalTranslator();
-        if (OnlineTranslationActive && store.Load<string>(StoreKeys.DeepLKey) is { } key &&
-            services.MakeOnlineTranslator(key, local is UnavailableTranslator ? null : local) is { } online)
-            return online;
+
+        if (settings.Engine == TranslationEngine.Gemini && HasGeminiKey)
+        {
+            if (store.Load<string>(StoreKeys.GeminiKey) is { Length: > 0 } key &&
+                services.MakeGeminiTranslator(key, local is UnavailableTranslator ? null : local) is { } gemini)
+            {
+                return gemini;
+            }
+        }
+        else if (settings.Engine == TranslationEngine.DeepL && HasDeepLKey)
+        {
+            if (store.Load<string>(StoreKeys.DeepLKey) is { Length: > 0 } key &&
+                services.MakeOnlineTranslator(key, local is UnavailableTranslator ? null : local) is { } online)
+            {
+                return online;
+            }
+        }
+
         return local;
     }
 
@@ -954,6 +1030,34 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         var translation = services.Translation;
         var (source, target) = (settings.SourceLanguage, settings.TargetLanguage);
         return translation.Create(source, target);
+    }
+
+    /// <summary>Kayıtlı bir Google Gemini anahtarı var mı.</summary>
+    public bool HasGeminiKey => store.Load<string>(StoreKeys.GeminiKey) is { Length: > 0 };
+
+    /// <summary>Gemini anahtarını dener; geçerliyse kaydeder ve Gemini'yi aktif model yapar.</summary>
+    public async Task<OnlineKeyCheck> SetGeminiKeyAsync(string key)
+    {
+        key = key.Trim();
+        var check = await services.CheckGeminiKeyAsync(key);
+        if (check.State is OnlineKeyState.Valid or OnlineKeyState.QuotaExceeded)
+        {
+            store.Save(StoreKeys.GeminiKey, key);
+            Changed(nameof(HasGeminiKey));
+            Settings = settings with { Engine = TranslationEngine.Gemini, OnlineTranslation = true };
+            if (isRunning) MakePipeline();
+            RefreshTranslatorStatus();
+        }
+        return check;
+    }
+
+    public void RemoveGeminiKey()
+    {
+        store.Remove(StoreKeys.GeminiKey);
+        Changed(nameof(HasGeminiKey));
+        Settings = settings with { Engine = TranslationEngine.DirectML };
+        if (isRunning) MakePipeline();
+        RefreshTranslatorStatus();
     }
 
     /// <summary>DeepL yalnız İngilizce→Türkçe için açılır (ayar ekranındaki dil seçenekleri de bunlar).</summary>
@@ -972,8 +1076,8 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         {
             store.Save(StoreKeys.DeepLKey, key);
             Changed(nameof(HasDeepLKey));
-            if (settings.OnlineTranslation && isRunning) MakePipeline();
-            else Settings = settings with { OnlineTranslation = true };
+            Settings = settings with { Engine = TranslationEngine.DeepL, OnlineTranslation = true };
+            if (isRunning) MakePipeline();
             RefreshTranslatorStatus();
         }
         return check;
@@ -988,7 +1092,8 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
     {
         store.Remove(StoreKeys.DeepLKey);
         Changed(nameof(HasDeepLKey));
-        Settings = settings with { OnlineTranslation = false };
+        Settings = settings with { Engine = TranslationEngine.DirectML, OnlineTranslation = false };
+        if (isRunning) MakePipeline();
         RefreshTranslatorStatus();
     }
 
@@ -1020,6 +1125,7 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
     }
 
     public void FeedFrame(Frame frame) => HandleFrame(frame);
+    public void ClearLastFrame() => post(() => LastFrame = null);
 
     private async void HandleFrame(Frame frame)
     {
@@ -1072,7 +1178,9 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
 
     public static string? LocalAddress(string near)
     {
-        if (!IPAddress.TryParse(near, out var target) || target.AddressFamily != AddressFamily.InterNetwork) return null;
+        IPAddress? target = null;
+        if (!string.IsNullOrEmpty(near)) IPAddress.TryParse(near, out target);
+
         string? fallback = null;
         foreach (var network in NetworkInterface.GetAllNetworkInterfaces())
         {
@@ -1080,11 +1188,23 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
             foreach (var unicast in network.GetIPProperties().UnicastAddresses)
             {
                 if (unicast.Address.AddressFamily != AddressFamily.InterNetwork) continue;
-                var mask = unicast.IPv4Mask.GetAddressBytes();
-                var address = unicast.Address.GetAddressBytes();
-                var wanted = target.GetAddressBytes();
-                if (Enumerable.Range(0, 4).All(i => (address[i] & mask[i]) == (wanted[i] & mask[i]))) return unicast.Address.ToString();
-                fallback ??= unicast.Address.ToString();
+                var ip = unicast.Address.ToString();
+                if (ip.StartsWith("127.") || ip.StartsWith("169.254.")) continue;
+
+                if (target != null && target.AddressFamily == AddressFamily.InterNetwork)
+                {
+                    try
+                    {
+                        var mask = unicast.IPv4Mask.GetAddressBytes();
+                        var address = unicast.Address.GetAddressBytes();
+                        var wanted = target.GetAddressBytes();
+                        if (Enumerable.Range(0, 4).All(i => (address[i] & mask[i]) == (wanted[i] & mask[i]))) return ip;
+                    }
+                    catch { }
+                }
+
+                if (ip.StartsWith("192.168.") || ip.StartsWith("10.")) return ip;
+                fallback ??= ip;
             }
         }
         return fallback;

@@ -23,6 +23,12 @@ public sealed class DesktopCaptureStreamSession : IStreamSession
     private Task? loopTask;
     private bool running;
 
+    [System.Runtime.InteropServices.DllImport("winmm.dll", EntryPoint = "timeBeginPeriod")]
+    private static extern uint TimeBeginPeriod(uint uMilliseconds);
+
+    [System.Runtime.InteropServices.DllImport("winmm.dll", EntryPoint = "timeEndPeriod")]
+    private static extern uint TimeEndPeriod(uint uMilliseconds);
+
     public DesktopCaptureStreamSession(string? targetWindowTitle = null, int screenIndex = 0)
     {
         this.targetWindowTitle = targetWindowTitle;
@@ -42,46 +48,73 @@ public sealed class DesktopCaptureStreamSession : IStreamSession
     private async Task CaptureLoopAsync(CancellationToken token)
     {
         bool emittedStreaming = false;
+        TimeBeginPeriod(1);
 
-        while (running && !token.IsCancellationRequested)
+        try
         {
-            try
+            while (running && !token.IsCancellationRequested)
             {
-                Frame? frame = null;
-
-                // 1. Eğer özel bir pencere veya OBS seçilmişse pencereyi yakala
-                if (!string.IsNullOrWhiteSpace(targetWindowTitle))
+                try
                 {
-                    var hWnd = WindowCaptureService.FindWindowBySubstring(targetWindowTitle);
-                    if (hWnd != IntPtr.Zero)
+                    Frame? frame = null;
+
+                    // 1. Belirli bir fiziksel monitör seçilmişse o monitörün koordinatlarını yakala
+                    if (!string.IsNullOrWhiteSpace(targetWindowTitle) && targetWindowTitle.StartsWith("monitor:", StringComparison.OrdinalIgnoreCase))
                     {
-                        frame = WindowCaptureService.Capture(hWnd);
+                        if (int.TryParse(targetWindowTitle["monitor:".Length..], out int mIndex))
+                        {
+                            var monitors = WindowCaptureService.GetDisplayMonitors();
+                            var targetMon = monitors.FirstOrDefault(m => m.Index == mIndex) ?? monitors.FirstOrDefault(m => m.IsPrimary);
+                            if (targetMon != null)
+                            {
+                                frame = WindowCaptureService.CaptureScreen(targetMon.Left, targetMon.Top, targetMon.Width, targetMon.Height);
+                            }
+                        }
+                    }
+                    // 2. Özel bir pencere seçilmişse (SADECE o pencere yakalanır, asla tüm ekrana taşmaz)
+                    else if (!string.IsNullOrWhiteSpace(targetWindowTitle))
+                    {
+                        string winTitle = targetWindowTitle.StartsWith("window:", StringComparison.OrdinalIgnoreCase)
+                            ? targetWindowTitle["window:".Length..]
+                            : targetWindowTitle;
+
+                        var hWnd = WindowCaptureService.FindWindowBySubstring(winTitle);
+                        if (hWnd != IntPtr.Zero)
+                        {
+                            frame = WindowCaptureService.Capture(hWnd);
+                        }
+                    }
+                    // 3. Özel bir pencere veya monitör belirtilmemişse genel masaüstünü yakala
+                    else
+                    {
+                        frame = WindowCaptureService.CaptureScreen();
+                    }
+
+                    if (frame != null)
+                    {
+                        if (!emittedStreaming)
+                        {
+                            emittedStreaming = true;
+                            StateChanged?.Invoke(SessionState.Streaming);
+                        }
+                        FrameReceived?.Invoke(frame);
                     }
                 }
+                catch { }
 
-                // 2. Özel pencere yoksa veya bulunamadıysa doğrudan masaüstü / ekranı oku
-                frame ??= WindowCaptureService.CaptureScreen();
-
-                if (frame != null)
+                try
                 {
-                    if (!emittedStreaming)
-                    {
-                        emittedStreaming = true;
-                        StateChanged?.Invoke(SessionState.Streaming);
-                    }
-                    FrameReceived?.Invoke(frame);
+                    await Task.Delay(16, token); // ~60 FPS akıcı ve gecikmesiz canlı yayın (OBS berraklığında)
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
                 }
             }
-            catch { }
-
-            try
-            {
-                await Task.Delay(100, token); // ~10 FPS (Altyazı OCR için ideal hız)
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
+        }
+        finally
+        {
+            TimeEndPeriod(1);
         }
     }
 

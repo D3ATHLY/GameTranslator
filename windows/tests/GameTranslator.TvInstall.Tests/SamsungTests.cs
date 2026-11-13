@@ -103,8 +103,8 @@ public class SamsungTests
     [Fact]
     public void FailedInstallIsReadFromTheOutput()
     {
-        Assert.True(SamsungTvInstaller.InstallFailed("app_id[GameTranslatorT.GameTranslator] install failed[118, -12]"));
-        Assert.False(SamsungTvInstaller.InstallFailed("Push complete.\napp_id[GameTranslatorT.GameTranslator] installing[100]\nspend time for pkgcmd is [1234]ms"));
+        Assert.True(SamsungTvInstaller.InstallFailed("app_id[GameTransT.GameTranslator] install failed[118, -12]"));
+        Assert.False(SamsungTvInstaller.InstallFailed("Push complete.\napp_id[GameTransT.GameTranslator] installing[100]\nspend time for pkgcmd is [1234]ms"));
     }
 
     /// <summary>Kendi imzaladığımız sahte yazar ve dağıtıcı sertifikalarıyla paketi imzalar.</summary>

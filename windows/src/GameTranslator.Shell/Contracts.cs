@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+using System.Text.Json.Serialization;
 using GameTranslator.Core;
 using GameTranslator.Core.LgTv;
 using GameTranslator.RemotePlay;
@@ -19,12 +20,28 @@ public static class StoreKeys
     public const string DevSessionRenewed = "devSessionRenewed";
     /// <summary>Kullanıcının DeepL anahtarı (isteğe bağlı çevrimiçi çeviri).</summary>
     public const string DeepLKey = "deepLKey";
+    /// <summary>Kullanıcının Google Gemini API anahtarı.</summary>
+    public const string GeminiKey = "geminiKey";
+}
+
+/// <summary>Kullanıcının seçtiği çeviri motoru/modeli.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<TranslationEngine>))]
+public enum TranslationEngine
+{
+    /// <summary>Cihaz üstü donanım hızlandırmalı model (DirectML / NPU / CPU).</summary>
+    DirectML,
+    /// <summary>Google Gemini 2.5 / 2.0 Flash (Bulut Yapay Zeka).</summary>
+    Gemini,
+    /// <summary>DeepL REST API servisi.</summary>
+    DeepL
 }
 
 /// <summary>Kalıcı ayarlar (şifreli depo değil, sıradan ayar dosyası).</summary>
 public sealed record UserSettings
 {
     public CropRegion Region { get; init; } = new();
+    /// <summary>Aktif çeviri motoru (DirectML, Gemini veya DeepL).</summary>
+    public TranslationEngine Engine { get; init; } = TranslationEngine.DirectML;
     /// <summary>Ek bölge 1 (ör. sağ üstteki görev paneli); null ise kapalı. Num 1 tuşuyla bir kez okunup çevrilir.</summary>
     public CropRegion? ExtraRegion1 { get; init; }
     /// <summary>Ek bölge 2 (ör. sağ alttaki bilgi kutusu); null ise kapalı. Num 2 tuşuyla bir kez okunup çevrilir.</summary>
@@ -173,6 +190,9 @@ public interface IAppServices
     /// <summary>DeepL çevirmeni; <paramref name="fallback"/> DeepL'e ulaşılamayan satırları çevirir. Bu derlemede yoksa null.</summary>
     ITextTranslator? MakeOnlineTranslator(string key, ITextTranslator? fallback) => null;
     Task<OnlineKeyCheck> CheckOnlineKeyAsync(string key) => Task.FromResult(new OnlineKeyCheck(OnlineKeyState.Unreachable));
+    /// <summary>Google Gemini çevirmeni; <paramref name="fallback"/> Gemini'ye ulaşılamayan satırları çevirir.</summary>
+    ITextTranslator? MakeGeminiTranslator(string key, ITextTranslator? fallback) => null;
+    Task<OnlineKeyCheck> CheckGeminiKeyAsync(string key) => Task.FromResult(new OnlineKeyCheck(OnlineKeyState.Unreachable));
     /// <summary>Türkçe dublaj modeli; bu derlemede yoksa null.</summary>
     IDubbingModel? Dubbing => null;
     /// <summary>Hızlı dublaj: sistemin kendi Türkçe sesi (Windows'ta Microsoft Tolga); yoksa null.</summary>

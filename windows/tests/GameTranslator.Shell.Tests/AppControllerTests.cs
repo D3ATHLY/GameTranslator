@@ -133,7 +133,7 @@ internal sealed class FakeServices : IAppServices
         PairCount++;
         return Task.FromResult(new TvPairing("tv-key", AppOnTv is not null));
     }
-    public IStreamSession MakeStream(RegisteredConsole console, byte[] accountId)
+    public IStreamSession MakeStream(RegisteredConsole? console, byte[]? accountId, UserSettings? settings = null)
     {
         var stream = new FakeStream();
         Streams.Add(stream);

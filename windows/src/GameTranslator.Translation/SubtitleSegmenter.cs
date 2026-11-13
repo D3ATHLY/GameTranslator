@@ -43,7 +43,7 @@ internal static partial class SubtitleSegmenter
     public static string? LabelName(Piece piece) =>
         !piece.Translate && piece.Text.EndsWith(": ", StringComparison.Ordinal) ? piece.Text[..^2] : null;
 
-    [GeneratedRegex(@"^(?<dash>[-–—]+)\s*")]
+    [GeneratedRegex(@"^(?<dash>(?:[-–—]+|>{1,3}))\s*")]
     private static partial Regex DialogueDash();
 
     // Cümle sonu: . ! ? … (yinelenebilir), ardından isteğe bağlı kapanış tırnağı/parantez ve boşluk.

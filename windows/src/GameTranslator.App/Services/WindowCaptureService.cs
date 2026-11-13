@@ -77,6 +77,10 @@ public static class WindowCaptureService
 
     private const int SM_CXSCREEN = 0;
     private const int SM_CYSCREEN = 1;
+    private const int SM_XVIRTUALSCREEN = 76;
+    private const int SM_YVIRTUALSCREEN = 77;
+    private const int SM_CXVIRTUALSCREEN = 78;
+    private const int SM_CYVIRTUALSCREEN = 79;
     private const int SRCCOPY = 0x00CC0020;
     private const int DIB_RGB_COLORS = 0;
     private const int BI_RGB = 0;
@@ -93,6 +97,10 @@ public static class WindowCaptureService
     private const uint SWP_NOMOVE = 0x0002;
     private const uint SWP_NOACTIVATE = 0x0010;
 
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out RECT pvAttribute, int cbAttribute);
+    private const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
+
     [DllImport("user32.dll", SetLastError = true)]
     private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
 
@@ -104,6 +112,63 @@ public static class WindowCaptureService
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+    private struct MONITORINFOEX
+    {
+        public int cbSize;
+        public RECT rcMonitor;
+        public RECT rcWork;
+        public uint dwFlags;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+        public string szDevice;
+    }
+
+    private delegate bool MonitorEnumProc(IntPtr hMonitor, IntPtr hdcMonitor, ref RECT lprcMonitor, IntPtr dwData);
+
+    [DllImport("user32.dll")]
+    private static extern bool EnumDisplayMonitors(IntPtr hdc, IntPtr lprcClip, MonitorEnumProc lpfnEnum, IntPtr dwData);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFOEX lpmi);
+
+    private const uint MONITORINFOF_PRIMARY = 1;
+
+    public sealed record DisplayMonitorInfo(int Index, string Name, int Left, int Top, int Width, int Height, bool IsPrimary);
+
+    public static IReadOnlyList<DisplayMonitorInfo> GetDisplayMonitors()
+    {
+        var list = new List<DisplayMonitorInfo>();
+        int index = 0;
+        try
+        {
+            EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, (IntPtr hMon, IntPtr hdc, ref RECT rc, IntPtr data) =>
+            {
+                var mi = new MONITORINFOEX();
+                mi.cbSize = Marshal.SizeOf<MONITORINFOEX>();
+                if (GetMonitorInfo(hMon, ref mi))
+                {
+                    bool isPrimary = (mi.dwFlags & MONITORINFOF_PRIMARY) != 0;
+                    int w = mi.rcMonitor.Width;
+                    int h = mi.rcMonitor.Height;
+                    string primaryLabel = isPrimary ? " (Ana Ekran)" : "";
+                    string name = $"🖥️ Monitör {index + 1}: {w}x{h}{primaryLabel}";
+                    list.Add(new DisplayMonitorInfo(index, name, mi.rcMonitor.Left, mi.rcMonitor.Top, w, h, isPrimary));
+                    index++;
+                }
+                return true;
+            }, IntPtr.Zero);
+        }
+        catch { }
+
+        if (list.Count == 0)
+        {
+            int sw = GetSystemMetrics(SM_CXSCREEN);
+            int sh = GetSystemMetrics(SM_CYSCREEN);
+            list.Add(new DisplayMonitorInfo(0, $"🖥️ Monitör 1: {sw}x{sh} (Ana Ekran)", 0, 0, sw > 0 ? sw : 1920, sh > 0 ? sh : 1080, true));
+        }
+        return list;
+    }
 
     private static readonly HashSet<string> RemotePlayProcessNames = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -251,7 +316,7 @@ public static class WindowCaptureService
     }
 
     /// <summary>
-    /// Hedef Chiaki veya Remote Play penceresinin görüntüsünü BGRA Frame olarak yakalar.
+    /// Hedef pencerenin görüntüsünü BGRA Frame olarak yakalar.
     /// Pencere bulunamazsa veya geçersizse null döner; masaüstünü ASLA yakalamaz.
     /// </summary>
     public static Frame? Capture(IntPtr hWnd)
@@ -260,21 +325,45 @@ public static class WindowCaptureService
 
         try
         {
-            if (!IsWindowVisible(hWnd) || IsIconic(hWnd)) return null;
+            if (!IsWindowVisible(hWnd)) return null;
 
-            if (!GetClientRect(hWnd, out var rect) || rect.Width < 100 || rect.Height < 100)
+            // Eğer pencere simge durumundaysa arka planda görünür yap
+            if (IsIconic(hWnd))
+            {
+                ShowWindow(hWnd, SW_SHOWNOACTIVATE);
+            }
+
+            int srcX = 0, srcY = 0, width = 0, height = 0;
+
+            // DWM Extended Frame Bounds (Gölge hariç net pencere sınırları)
+            if (DwmGetWindowAttribute(hWnd, DWMWA_EXTENDED_FRAME_BOUNDS, out var dwmRect, Marshal.SizeOf<RECT>()) == 0
+                && dwmRect.Width >= 100 && dwmRect.Height >= 100)
+            {
+                srcX = dwmRect.Left;
+                srcY = dwmRect.Top;
+                width = dwmRect.Width;
+                height = dwmRect.Height;
+            }
+            else if (GetClientRect(hWnd, out var rect) && rect.Width >= 100 && rect.Height >= 100)
+            {
+                var pt = new POINT();
+                ClientToScreen(hWnd, ref pt);
+                srcX = pt.X;
+                srcY = pt.Y;
+                width = rect.Width;
+                height = rect.Height;
+            }
+            else
+            {
                 return null;
+            }
 
-            var pt = new POINT();
-            ClientToScreen(hWnd, ref pt);
-            int srcX = pt.X;
-            int srcY = pt.Y;
-            int width = rect.Width;
-            int height = rect.Height;
-
-            int screenW = GetSystemMetrics(SM_CXSCREEN);
-            int screenH = GetSystemMetrics(SM_CYSCREEN);
-            if (width <= 0 || height <= 0 || srcX >= screenW || srcY >= screenH) return null;
+            int vLeft = GetSystemMetrics(SM_XVIRTUALSCREEN);
+            int vTop = GetSystemMetrics(SM_YVIRTUALSCREEN);
+            int vWidth = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+            int vHeight = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+            if (vWidth <= 0) vWidth = GetSystemMetrics(SM_CXSCREEN);
+            if (vHeight <= 0) vHeight = GetSystemMetrics(SM_CYSCREEN);
 
             IntPtr srcDc = GetDC(IntPtr.Zero);
             if (srcDc == IntPtr.Zero) return null;
@@ -282,22 +371,6 @@ public static class WindowCaptureService
             IntPtr memDc = CreateCompatibleDC(srcDc);
             IntPtr hBitmap = CreateCompatibleBitmap(srcDc, width, height);
             IntPtr oldBmp = SelectObject(memDc, hBitmap);
-
-            bool captured = false;
-            try
-            {
-                captured = PrintWindow(hWnd, memDc, PW_RENDERFULLCONTENT);
-            }
-            catch { }
-
-            if (!captured)
-            {
-                try
-                {
-                    captured = PrintWindow(hWnd, memDc, 0);
-                }
-                catch { }
-            }
 
             var bi = new BITMAPINFO
             {
@@ -313,14 +386,59 @@ public static class WindowCaptureService
             };
 
             var pixels = new byte[width * height * 4];
-            GetDIBits(memDc, hBitmap, 0, (uint)height, pixels, ref bi, DIB_RGB_COLORS);
+            bool captured = false;
 
-            // Eğer PrintWindow tamamen siyah piksel verdiyse (DirectX/OpenGL pencerelerinde yaygın)
-            // ve pencere ekranda görünüyorsa doğrudan ekran DC'sinden BitBlt yap
-            if (IsFrameBlack(pixels, width, height) && srcX >= 0 && srcY >= 0 && srcX + width <= screenW && srcY + height <= screenH)
+            // 1. ÖNCELİK: PrintWindow ile PW_RENDERFULLCONTENT (0x02)
+            // Windows DWM üzerinden YALNIZCA bu pencerenin kendi tamponunu çeker.
+            // Masaüstünü veya üstte duran diğer pencereleri (GameTranslator dahil) ASLA yakalamaz!
+            try
             {
-                BitBlt(memDc, 0, 0, width, height, srcDc, srcX, srcY, SRCCOPY);
-                GetDIBits(memDc, hBitmap, 0, (uint)height, pixels, ref bi, DIB_RGB_COLORS);
+                if (PrintWindow(hWnd, memDc, PW_RENDERFULLCONTENT))
+                {
+                    GetDIBits(memDc, hBitmap, 0, (uint)height, pixels, ref bi, DIB_RGB_COLORS);
+                    if (!IsFrameBlack(pixels, width, height))
+                    {
+                        captured = true;
+                    }
+                }
+            }
+            catch { }
+
+            // 2. Klasik PrintWindow (0) fallback
+            if (!captured)
+            {
+                try
+                {
+                    if (PrintWindow(hWnd, memDc, 0))
+                    {
+                        GetDIBits(memDc, hBitmap, 0, (uint)height, pixels, ref bi, DIB_RGB_COLORS);
+                        if (!IsFrameBlack(pixels, width, height))
+                        {
+                            captured = true;
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            // 3. Pencerenin Kendi DC'si (GetDC(hWnd)) - Yalnızca bu pencerenin istemci alanından (0,0) çeker, masaüstünden DEĞİL!
+            if (!captured)
+            {
+                try
+                {
+                    IntPtr wndDc = GetDC(hWnd);
+                    if (wndDc != IntPtr.Zero)
+                    {
+                        BitBlt(memDc, 0, 0, width, height, wndDc, 0, 0, SRCCOPY);
+                        ReleaseDC(hWnd, wndDc);
+                        GetDIBits(memDc, hBitmap, 0, (uint)height, pixels, ref bi, DIB_RGB_COLORS);
+                        if (!IsFrameBlack(pixels, width, height))
+                        {
+                            captured = true;
+                        }
+                    }
+                }
+                catch { }
             }
 
             SelectObject(memDc, oldBmp);
@@ -328,7 +446,7 @@ public static class WindowCaptureService
             DeleteDC(memDc);
             ReleaseDC(IntPtr.Zero, srcDc);
 
-            if (IsFrameBlack(pixels, width, height))
+            if (!captured || IsFrameBlack(pixels, width, height))
             {
                 return null;
             }
@@ -366,8 +484,8 @@ public static class WindowCaptureService
     {
         int screenW = GetSystemMetrics(SM_CXSCREEN);
         int screenH = GetSystemMetrics(SM_CYSCREEN);
-        if (width <= 0 || width > screenW) width = screenW > 0 ? screenW : 1920;
-        if (height <= 0 || height > screenH) height = screenH > 0 ? screenH : 1080;
+        if (width <= 0) width = screenW > 0 ? screenW : 1920;
+        if (height <= 0) height = screenH > 0 ? screenH : 1080;
 
         IntPtr srcDc = GetDC(IntPtr.Zero);
         if (srcDc == IntPtr.Zero) return null;
@@ -411,29 +529,54 @@ public static class WindowCaptureService
     }
 
     /// <summary>
-    /// Başlığı veya alt dizesi eşleşen herhangi bir açık pencereyi bulur (ör. OBS Studio, Projector vb.).
+    /// Başlığı veya alt dizesi eşleşen en uygun açık pencereyi bulur (ör. OBS Studio, Projector vb.).
     /// </summary>
     public static IntPtr FindWindowBySubstring(string substring)
     {
         if (string.IsNullOrWhiteSpace(substring)) return IntPtr.Zero;
         IntPtr found = IntPtr.Zero;
+        int bestScore = -1;
 
         EnumWindows((hWnd, _) =>
         {
             try
             {
-                if (!IsWindowVisible(hWnd) || IsIconic(hWnd)) return true;
+                if (!IsWindowVisible(hWnd)) return true;
                 GetWindowThreadProcessId(hWnd, out var pid);
                 if (pid == 0 || pid == Environment.ProcessId) return true;
 
+                if (!GetClientRect(hWnd, out var rect) || rect.Width < 100 || rect.Height < 100)
+                    return true;
+
                 var sb = new StringBuilder(256);
                 GetWindowText(hWnd, sb, 256);
-                var title = sb.ToString();
+                var title = sb.ToString().Trim();
+                if (string.IsNullOrWhiteSpace(title)) return true;
+
+                if (title.Equals(substring, StringComparison.OrdinalIgnoreCase))
+                {
+                    found = hWnd;
+                    bestScore = 1000;
+                    return false; // Tam eşleşme bulundu
+                }
 
                 if (title.Contains(substring, StringComparison.OrdinalIgnoreCase))
                 {
-                    found = hWnd;
-                    return false;
+                    int score = 500 - Math.Abs(title.Length - substring.Length);
+                    if (score > bestScore)
+                    {
+                        bestScore = score;
+                        found = hWnd;
+                    }
+                }
+                else if (substring.Contains(title, StringComparison.OrdinalIgnoreCase))
+                {
+                    int score = 400 - Math.Abs(title.Length - substring.Length);
+                    if (score > bestScore)
+                    {
+                        bestScore = score;
+                        found = hWnd;
+                    }
                 }
             }
             catch { }
@@ -465,6 +608,12 @@ public static class WindowCaptureService
                     var sb = new StringBuilder(256);
                     GetWindowText(hWnd, sb, 256);
                     var title = sb.ToString().Trim();
+                    if (title.Contains("GameTranslator", StringComparison.OrdinalIgnoreCase) ||
+                        title.Equals("Program Manager", StringComparison.OrdinalIgnoreCase) ||
+                        title.Equals("Settings", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
 
                     if (!string.IsNullOrWhiteSpace(title) && !list.Contains(title))
                     {
