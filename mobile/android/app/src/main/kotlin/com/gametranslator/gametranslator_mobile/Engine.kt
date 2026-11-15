@@ -7,8 +7,12 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
+import com.gametranslator.gametranslator_mobile.core.GamePackLibrary
 import com.gametranslator.gametranslator_mobile.core.Glossary
 import com.gametranslator.gametranslator_mobile.core.GlossaryTranslator
+import com.gametranslator.gametranslator_mobile.core.HttpPackServer
+import com.gametranslator.gametranslator_mobile.core.PackStore
+import com.gametranslator.gametranslator_mobile.core.PackTranslation
 import com.gametranslator.gametranslator_mobile.core.PrefixTranslator
 import com.gametranslator.gametranslator_mobile.core.ReadScheduler
 import com.gametranslator.gametranslator_mobile.core.SubtitlePipeline
@@ -22,6 +26,7 @@ import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.TextRecognizer
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.nio.ByteBuffer
@@ -56,6 +61,9 @@ object Engine : Native.SessionListener {
     @Volatile var frameWidth = 0; private set
     @Volatile var frameHeight = 0; private set
     @Volatile var translatedCount = 0; private set
+    /** Paketten gösterilen satır sayısı ve son satırın geldiği paketin (oynanan oyunun) adı. */
+    @Volatile var packHits = 0; private set
+    @Volatile var packGame = ""; private set
 
     val server = SubtitleServer()
 
@@ -108,6 +116,8 @@ object Engine : Native.SessionListener {
         "frameWidth" to frameWidth,
         "frameHeight" to frameHeight,
         "translated" to translatedCount,
+        "packHits" to packHits,
+        "packGame" to packGame,
         "nativeAvailable" to Native.available,
     )
 
@@ -174,7 +184,10 @@ object Engine : Native.SessionListener {
             running = true
             frameCount = 0
             translatedCount = 0
+            packHits = 0
+            packGame = ""
             setPhase("starting")
+            refreshPacks(app)
             // TV uygulaması kurulamayan cihazlar için: tarayıcıda http://telefon:8787/obs
             if (server.overlayPage == null) server.overlayPage = runCatching { app.assets.open("obs-overlay.html").use { it.readBytes() } }.getOrNull()
             val port = server.start()
@@ -216,7 +229,8 @@ object Engine : Native.SessionListener {
             if (!running) return@onControl
             if (now.style != before.style) server.sendStyle(now.style)
             if (now.engine != before.engine || now.deepLKey != before.deepLKey || now.sourceLanguage != before.sourceLanguage
-                || now.targetLanguage != before.targetLanguage || now.glossary != before.glossary) buildPipeline()
+                || now.targetLanguage != before.targetLanguage || now.glossary != before.glossary
+                || now.packsEnabled != before.packsEnabled) buildPipeline()
             if (now.region != before.region) {
                 scheduler.reset()
                 pipeline?.reset()
@@ -257,10 +271,78 @@ object Engine : Native.SessionListener {
             notifyChanged()
         }
         built.onTranslateFailed = { source -> log(1, "çevrilemedi: \"${source.replace('\n', ' ')}\"") }
+        // Oyun paketi: satır paketteyse motora gidilmez. Bulanık arama yalnız son tam eşleşmenin paketinde (oynanan oyun).
+        val app = appContext
+        if (app != null && s.packsEnabled && PackTranslation.applies(s.sourceLanguage, s.targetLanguage)) {
+            val library = packLibrary(app)
+            // Paketler çeviri iş parçacığında ilk istekten önce açılır (birkaç saniye; arayüz ve okuma beklemez).
+            translating.execute {
+                val started = SystemClock.elapsedRealtime()
+                try {
+                    val infos = library.infos
+                    log(2, "oyun paketleri: ${infos.size} paket, ${infos.sumOf { it.entries }} satır (${SystemClock.elapsedRealtime() - started} ms)")
+                } catch (error: Throwable) {
+                    // Bellek yetmezse paketsiz sürer; çeviri motoru çalışmaya devam eder.
+                    log(0, "oyun paketleri açılamadı: ${error.javaClass.simpleName}")
+                }
+            }
+            built.packLookup = { text -> PackTranslation.match(library, text) }
+            built.onPackHit = { source, match ->
+                packHits++
+                packGame = library.scopeTitle ?: match.packId ?: ""
+                log(2, "paket (${match.packId}): \"${source.replace('\n', ' ')}\"")
+            }
+        }
         built.onReadText = { text -> if (text != lastRead) { lastRead = text; notifyChanged() } }
         scheduler.reset()
         if (recognizer == null) recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
         pipeline = built
+    }
+
+    // --- Oyun paketleri ---
+
+    private val packLock = Any()
+    private var packs: GamePackLibrary? = null
+    private var packStore: PackStore? = null
+    private val packRefreshing = AtomicBoolean(false)
+
+    /** Uygulamayla gelen (assets/packs) ve sunucudan inen paketler; ilk aramada açılır, uygulama boyunca bellekte kalır. */
+    private fun packLibrary(app: Context): GamePackLibrary = synchronized(packLock) {
+        packs ?: GamePackLibrary({
+            (app.assets.list("packs") ?: emptyArray()).map { name -> name to { app.assets.open("packs/$name").use { it.readBytes() } } }
+        }, store(app).folder).also { packs = it }
+    }
+
+    private fun store(app: Context): PackStore = synchronized(packLock) {
+        // Uygulamadaki paketlerin .gz özetleri derlemede yazılır (build.gradle.kts: copyGamePacks); AGP varlıkları açtığı
+        // için telefonda dosyadan hesaplanamaz.
+        packStore ?: PackStore(File(app.filesDir, "packs-remote"), HttpPackServer(PackStore.DEFAULT_URL), bundledHashes = {
+            app.assets.open("packs-sha256.txt").bufferedReader().use { reader ->
+                reader.readLines().mapNotNull { it.substringBefore(' ').trim().lowercase().takeIf { hash -> hash.length == 64 } }.toSet()
+            }
+        }).also { packStore = it }
+    }
+
+    /**
+     * Haftada bir sunucudaki yeni ve güncellenen paketleri indirir (SHA-256 doğrulanır; uygulamada olanlar inmez).
+     * Arka planda; değişiklik olduysa ve paketler açıksa yeniden yüklenir.
+     */
+    private fun refreshPacks(app: Context) {
+        if (!settings.packsEnabled || !packRefreshing.compareAndSet(false, true)) return
+        Thread({
+            try {
+                val result = store(app).refresh()
+                if (!result.skipped) log(2, "paket sunucusu: ${result.downloaded.size} indirildi, ${result.removed.size} kaldırıldı")
+                if (result.downloaded.isNotEmpty() || result.removed.isNotEmpty()) {
+                    val library = synchronized(packLock) { packs }
+                    if (library != null) translating.execute { runCatching { library.reload() } }
+                }
+            } catch (error: Throwable) {
+                log(1, "paket sunucusuna ulaşılamadı: ${error.javaClass.simpleName}")
+            } finally {
+                packRefreshing.set(false)
+            }
+        }, "gt-packs").start()
     }
 
     // --- PS5 oturumu ---

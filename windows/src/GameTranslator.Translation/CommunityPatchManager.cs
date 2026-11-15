@@ -77,15 +77,75 @@ public sealed class CommunityPatchManager
     public string PatchesDirectory { get; }
     public IReadOnlyList<GamePatch> Patches { get { lock (_gate) return [.. _patches]; } }
 
+    /// <summary>
+    /// Kullanıcının elle seçtiği oyun (paket ya da yama kimliği); null ise otomatik. Seçim diske yazılır, açılışta
+    /// geri okunur. Seçili oyunun paketi ilk satırdan itibaren kullanılır; başka oyunların paketleri aranmaz.
+    /// </summary>
     public string? SelectedGameId
     {
         get => _selectedGameId;
         set
         {
+            value = string.IsNullOrWhiteSpace(value) ? null : value;
             if (_selectedGameId == value) return;
             _selectedGameId = value;
+            _packLibrary.Pinned = value;
+            try
+            {
+                if (value is null) File.Delete(SelectionFile);
+                else File.WriteAllText(SelectionFile, value);
+            }
+            catch { }
+            PatchesUpdated?.Invoke();
         }
     }
+
+    /// <summary>Paketler arka planda yüklendi mi (arayüz listeyi ancak o zaman ister; yoksa yükleme beklenirdi).</summary>
+    public bool PacksReady { get; private set; }
+
+    /// <summary>%LOCALAPPDATA%\GameTranslator\selected-game.txt</summary>
+    private static string SelectionFile =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "GameTranslator", "selected-game.txt");
+
+    /// <summary>Elle seçilebilen oyunlar (paketler ve yüklenen yamalar): (kimlik, ad, hazır satır sayısı), ada göre sıralı.</summary>
+    public IReadOnlyList<(string Id, string Title, int Lines)> Games
+    {
+        get
+        {
+            var packs = _packLibrary.Packs.Select(p => (p.Id, p.Title, p.Entries));
+            List<(string Id, string Title, int Lines)> patches;
+            lock (_gate) patches = [.. _patches.Select(p => (p.Id, p.GameName, p.Count))];
+            return [.. packs.Concat(patches).DistinctBy(g => g.Id).OrderBy(g => g.Title, StringComparer.CurrentCultureIgnoreCase)];
+        }
+    }
+
+    /// <summary>
+    /// Oynanan oyunun adı (elle seçilen, PS5'in bildirdiği ya da paketten anlaşılan); bilinmiyorsa null. Yapay zekâya
+    /// bağlam olarak gider; paketi olmayan oyunda da PS5'in bildirdiği ad gider.
+    /// </summary>
+    public string? PlayedGameTitle => (PacksReady ? _packLibrary.ScopeTitle : null) ?? RunningGame?.Name;
+
+    /// <summary>PS5'te çalışan oyun (keşif yanıtından); bilinmiyorsa null.</summary>
+    public RunningGame? RunningGame { get; private set; }
+
+    /// <summary>PS5'te çalışan oyunun paketi varsa onun kimliği (elle seçim yoksa paket ilk satırdan kullanılır).</summary>
+    public string? DetectedGameId => _packLibrary.Detected;
+
+    /// <summary>Oyun belli (elle seçildi ya da PS5 bildirdi ve paketi var): paket oyunun tanınmasını beklemeden kullanılır.</summary>
+    public bool GameKnown => _selectedGameId is not null || _packLibrary.Detected is not null;
+
+    /// <summary>PS5'in bildirdiği oyun değişti; paketi varsa elle seçim yokken o paket kullanılır. Değiştiyse true.</summary>
+    public bool SetRunningGame(RunningGame? game)
+    {
+        if (game == RunningGame) return false;
+        RunningGame = game;
+        _packLibrary.Detected = PacksReady ? _packLibrary.FindByGameName(game?.Name) : null;
+        PatchesUpdated?.Invoke();
+        return true;
+    }
+
+    /// <summary>Seçili oyun bir paket mi (yama değil).</summary>
+    private bool SelectedIsPack => _selectedGameId is { } id && _packLibrary.Packs.Any(p => p.Id == id);
 
     public CommunityPatchManager()
     {
@@ -94,6 +154,8 @@ public sealed class CommunityPatchManager
         try
         {
             Directory.CreateDirectory(PatchesDirectory);
+            if (File.Exists(SelectionFile) && File.ReadAllText(SelectionFile).Trim() is { Length: > 0 } saved)
+                _packLibrary.Pinned = _selectedGameId = saved;
         }
         catch { }
 
@@ -104,6 +166,7 @@ public sealed class CommunityPatchManager
             try
             {
                 _packLibrary.WarmUp();
+                PacksReady = true;
                 UpdateSummaryCache();
                 PatchesUpdated?.Invoke();
             }
@@ -310,11 +373,13 @@ public sealed class CommunityPatchManager
         if (!IsEnabled || string.IsNullOrWhiteSpace(text)) return null;
         var trimmed = text.Trim();
 
-        // 1. Gömülü/kullanıcı GamePackLibrary'de ara
-        if (PackLookup.Match(_packLibrary, trimmed) is { } packMatch)
+        // 1. Gömülü/kullanıcı GamePackLibrary'de ara (elle bir yama seçildiyse paketlere bakılmaz)
+        if ((_selectedGameId is null || SelectedIsPack) && PackLookup.Match(_packLibrary, trimmed) is { } packMatch)
         {
             return packMatch;
         }
+        // Elle seçilen oyun bir paketse yamalara bakılmaz.
+        if (SelectedIsPack) return null;
 
         // 2. Yüklü topluluk yamalarında (Community Patches) ara
         lock (_gate)

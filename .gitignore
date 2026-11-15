@@ -21,7 +21,6 @@ chiaki/
 dotnet-install.ps1
 
 # IDE & Agent local settings
-.claude/
 .gemini/
 .appdata/
 .dotnet_cli/
@@ -33,3 +32,4 @@ couchsubs*
 
 # Mobil derleme için klonlanan chiaki-ng kaynakları
 third-party/chiaki-ng/
+!mobile/assets/*.jpg

@@ -10,10 +10,13 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- largeHeap: uygulamayla gelen oyun paketleri bellekte ~40-50 MB tutar (anahtarlar, Türkçe metin ve bulanık
+         imzalar); ML Kit ve PS5 görüntü akışıyla birlikte varsayılan yığın sınırı zayıf telefonlarda yetmeyebilir. -->
     <application
         android:label="GameTranslator"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:largeHeap="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"

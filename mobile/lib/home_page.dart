@@ -8,6 +8,7 @@ import 'bridge.dart';
 import 'guide_page.dart';
 import 'main.dart';
 import 'settings_page.dart';
+import 'tv_install_page.dart';
 import 'ui.dart';
 
 /// Ana ekran: altta yüzen cam sekme çubuğu ve üç sekme (Çeviri, Rehber, Ayarlar).
@@ -273,6 +274,14 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               const _HowStep(number: 1, text: 'Oyunda altyazıları aç.'),
               const _HowStep(number: 2, text: 'Yukarıdaki düğmeyle çeviriyi başlat.'),
               const _HowStep(number: 3, text: 'TV\'de GameTranslator\'ı aç; çeviri oyunun üstünde görünür.'),
+              Cell(
+                icon: CupertinoIcons.tv_fill,
+                iconColor: Tokens.purple,
+                title: 'TV uygulamasını kur',
+                subtitle: 'TV\'nde GameTranslator yoksa',
+                chevron: true,
+                onTap: () => Navigator.of(context).push(appleRoute<void>((_) => const TvInstallPage())),
+              ),
               Cell(icon: CupertinoIcons.book_fill, iconColor: Tokens.warning, title: 'Ayrıntılı rehber', chevron: true, onTap: () => selectTab(1)),
             ],
           ),
@@ -446,6 +455,11 @@ class _LiveCard extends StatelessWidget {
                   Text(state.lastTranslation, style: Txt.title3.copyWith(fontWeight: FontWeight.w500)),
                   const SizedBox(height: 4),
                   Text(state.lastSource.replaceAll('\n', ' '), style: Txt.subhead.copyWith(color: Tokens.textSecondary)),
+                  if (state.packHits > 0 && state.packGame.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text('${state.packGame} paketi kullanılıyor · ${state.packHits} satır paketten',
+                        style: Txt.footnote.copyWith(color: Tokens.success)),
+                  ],
                 ] else
                   Text('Oyunda altyazı çıkınca çevirisi burada ve TV\'de görünür.', style: Txt.subhead.copyWith(color: Tokens.textSecondary)),
                 if (streaming) ...[

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 using GameTranslator.Core;
 using GameTranslator.Core.Dubbing;
@@ -139,7 +139,8 @@ internal sealed class FakeServices : IAppServices
         Streams.Add(stream);
         return stream;
     }
-    public IKeeper MakeKeeper(LgTv tv, string? key, IReadOnlyDictionary<string, string> parameters, Func<bool> appConnected, Action<LgTv> onMoved)
+    public IKeeper MakeKeeper(LgTv tv, string? key, IReadOnlyDictionary<string, string> parameters, Func<bool> appConnected, Action<LgTv> onMoved,
+                       Action<string> onKey)
     {
         var keeper = new FakeKeeper();
         Keepers.Add(keeper);
@@ -547,6 +548,10 @@ public class AppControllerRunTests
         Assert.Equal("Remote Play is in use on another device", AppController.StatusText(SessionState.Disconnected(DisconnectKind.InUse), true, text));
         Assert.Equal("The PS5 refused the connection. Set up the PS5 again.", AppController.StatusText(SessionState.Disconnected(DisconnectKind.Refused), true, text));
         Assert.Equal("Reconnecting…", AppController.StatusText(SessionState.Disconnected(DisconnectKind.Network), true, text));
+        Assert.Equal("The PS5 didn't accept this pairing. Pair the PS5 again with the second account in Settings.",
+            AppController.StatusText(SessionState.Disconnected(DisconnectKind.RegistrationInvalid), true, text));
+        Assert.Equal("PS5 bu kaydı kabul etmedi. Ayarlar'dan PS5'i ikinci hesapla yeniden eşleyin.",
+            AppController.StatusText(SessionState.Disconnected(DisconnectKind.RegistrationInvalid), true, Localizer.ForLanguage("tr")));
         Assert.Equal("Not connected", AppController.StatusText(SessionState.Disconnected(DisconnectKind.Stopped), false, text));
     }
 

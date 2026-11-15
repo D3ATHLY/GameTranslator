@@ -9,6 +9,7 @@ import 'bridge.dart';
 import 'home_page.dart';
 import 'intro_page.dart';
 import 'main.dart';
+import 'tv_install_page.dart';
 import 'ui.dart';
 
 /// Ayarlar sekmesi, iOS ayarları düzeninde: çeviri, altyazı bölgesi, TV'deki görünüm, PS5 ve hakkında.
@@ -259,8 +260,23 @@ class _SettingsTabState extends State<SettingsTab> {
                 chevron: true,
                 onTap: editGlossary,
               ),
+            if (s.sourceLanguage == 'en' && s.targetLanguage == 'tr')
+              Cell(
+                icon: CupertinoIcons.cube_box_fill,
+                iconColor: Tokens.success,
+                title: 'Oyun paketleri',
+                subtitle: 'GTA V, RDR2, Elden Ring… satırları hazır Türkçesiyle',
+                trailing: CupertinoSwitch(
+                  value: s.packsEnabled,
+                  activeTrackColor: Tokens.success,
+                  onChanged: (value) => change((s) => s.json['packsEnabled'] = value),
+                ),
+              ),
           ],
         ),
+        if (s.sourceLanguage == 'en' && s.targetLanguage == 'tr')
+          const GroupFooter('Oyunun paketinde bulunan satır çeviri motoruna gitmeden paketteki Türkçesiyle gösterilir. '
+              'Paketler CouchSubs topluluğundan gelir ve haftada bir yenilenir.'),
         const GroupHeader('ÇEVİRİ MOTORU'),
         Group(
           children: [
@@ -397,6 +413,22 @@ class _SettingsTabState extends State<SettingsTab> {
               trailing: CupertinoSwitch(value: style['bold'] as bool, activeTrackColor: Tokens.success, onChanged: (value) => setStyle('bold', value)),
             ),
             Cell(title: 'TV\'ye Deneme Altyazısı Gönder', titleColor: Tokens.accent, onTap: sendTest),
+          ],
+        ),
+
+        // ---------------------------------------------------------------- TV uygulaması
+        const GroupHeader('TV UYGULAMASI'),
+        Group(
+          inset: 60,
+          children: [
+            Cell(
+              icon: CupertinoIcons.tv_fill,
+              iconColor: Tokens.purple,
+              title: 'TV Uygulamasını Kur',
+              subtitle: 'LG ve Android TV\'ye telefondan; güncellemek için de',
+              chevron: true,
+              onTap: () => Navigator.of(context).push(appleRoute<void>((_) => const TvInstallPage())),
+            ),
           ],
         ),
 

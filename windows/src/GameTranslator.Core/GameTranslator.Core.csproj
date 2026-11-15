@@ -14,6 +14,8 @@
     <EmbeddedResource Include="Resources\obs-overlay.html" LogicalName="obs-overlay.html" Condition="Exists('Resources\obs-overlay.html')" />
     <EmbeddedResource Include="Resources\ai-models.json" LogicalName="ai-models.json" Condition="Exists('Resources\ai-models.json')" />
     <EmbeddedResource Include="Resources\packs\*.json.gz" LogicalName="packs/%(Filename)%(Extension)" />
+    <!-- Ücretsiz çevirinin terim sözlüğü (adlar ve oyun terimleri korunur); CouchSubs'ta gömülüydü, taşınırken düşmüştü. -->
+    <EmbeddedResource Include="Resources\glossary-en-tr.json" LogicalName="glossary-en-tr.json" />
   </ItemGroup>
 
   <ItemGroup>

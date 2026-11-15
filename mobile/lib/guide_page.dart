@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'bridge.dart';
 import 'main.dart';
+import 'tv_install_page.dart';
 import 'ui.dart';
 
 /// Ayrıntılı kullanım rehberi: PS5 hazırlığından sorun gidermeye kadar her adım. iOS ayarlarındaki gibi bölüm
@@ -231,7 +232,8 @@ List<GuideChapter> guideChapters(String? address) {
       subtitle: 'Desteklenen TV\'ler ve TV uygulaması',
       children: [
         const _P('Altyazıyı TV\'de gösteren ayrı bir GameTranslator TV uygulaması vardır. Henüz mağazalarda olmadığı için TV\'ye '
-            'bir kez elle kurulur; kurulumu bilgisayardaki GameTranslator yapar.'),
+            'bir kez kurulur. LG ve Android TV\'ye bu telefondan kurabilirsin; Samsung\'a kurulum şimdilik bilgisayardan yapılır.'),
+        const InstallTvButton(),
         const _Sub('Hangi TV\'ler destekleniyor?'),
         const _Table([
           ('LG', 'webOS 4 ve üstü', true),
@@ -244,8 +246,9 @@ List<GuideChapter> guideChapters(String? address) {
         const _Steps([
           'Bilgisayardan webostv.developer.lge.com adresinde ücretsiz bir LG geliştirici hesabı aç.',
           'TV\'de LG Content Store\'dan "Developer Mode" uygulamasını kur, hesabınla giriş yap ve "Dev Mode Status"u aç. TV yeniden başlar.',
-          'Bilgisayardaki GameTranslator\'ın TV adımında TV\'ni seç, "Bağlan"a bas ve TV\'deki izni onayla.',
-          'TV\'de Developer Mode uygulamasında "Key Server"ı aç, ekrandaki 6 karakterli parolayı bilgisayara yaz ve "TV\'ye kur"a bas.',
+          'TV\'de Developer Mode uygulamasında "Key Server"ı aç.',
+          'Telefonda "TV uygulamasını kur" sihirbazında LG\'yi seç, TV\'ni bul ve ekrandaki 6 karakterli parolayı yaz '
+              '(bilgisayardaki GameTranslator\'ın TV adımı da aynısını yapar).',
         ]),
         const _P('LG\'de geliştirici modu en çok 1000 saat açık kalır. Uzun süre kullanmayacaksan süre dolmadan Developer Mode '
             'uygulamasında "EXTEND"e bas; süre dolarsa TV uygulaması silinir ve baştan kurman gerekir.'),
@@ -261,13 +264,13 @@ List<GuideChapter> guideChapters(String? address) {
           'TV\'de Ayarlar › Cihaz Tercihleri › Hakkında\'ya gir (Google TV\'de Ayarlar › Sistem › Hakkında).',
           '"Yapı numarası"nın üstünde Tamam tuşuna 7 kez bas.',
           'Geliştirici seçenekleri\'nden "USB hata ayıklama"yı (varsa "Ağ hata ayıklama"yı da) aç.',
-          'Bilgisayardaki GameTranslator\'ın TV adımında "Android TV / Google TV"yi seç ve TV\'deki izin sorusunu onayla.',
+          'Telefonda "TV uygulamasını kur" sihirbazında "Android TV / Google TV"yi seç ve TV\'deki izin sorusunu onayla.',
         ]),
-        const _P('Bilgisayarın yoksa Android TV\'de USB bellekle de kurabilirsin: GameTranslator\'ın sürümler sayfasından '
+        const _P('TV ağdan hata ayıklamaya izin vermiyorsa USB bellekle de kurabilirsin: GameTranslator\'ın sürümler sayfasından '
             'TV uygulamasının APK dosyasını indir, belleğe kopyala ve TV\'de bir dosya yöneticisiyle açıp kur.'),
         const _Sub('Kurulduktan sonra'),
-        const _P('TV uygulaması telefonu ağda kendisi bulur; telefona TV\'nin adresini yazman gerekmez. Bilgisayara yalnızca '
-            'kurulum için ihtiyaç var; sonrasında kapalı kalabilir.'),
+        const _P('TV uygulaması telefonu ağda kendisi bulur; telefona TV\'nin adresini yazman gerekmez. Samsung\'da bilgisayara '
+            'yalnızca kurulum için ihtiyaç var; sonrasında kapalı kalabilir.'),
         const _Sub('Yayın yapanlar için: OBS'),
         _P('Çeviri açıkken altyazılar bir web sayfası olarak da sunulur. OBS\'te "Tarayıcı Kaynağı" ekleyip adres olarak '
             'http://$phone:8787/obs yaz (1920×1080). Sayfanın zemini saydamdır; TV\'nin tarayıcısında oyunun üstünde göstermez, '
@@ -699,4 +702,19 @@ class TvHelpPage extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Rehberdeki "TV uygulamasını kur" düğmesi: telefondan kurulum sihirbazını açar.
+class InstallTvButton extends StatelessWidget {
+  const InstallTvButton({super.key});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: GlowButton(
+          icon: CupertinoIcons.tv_fill,
+          label: 'TV uygulamasını kur',
+          onPressed: () => Navigator.of(context).push(appleRoute<void>((_) => const TvInstallPage())),
+        ),
+      );
 }

@@ -242,6 +242,56 @@ public sealed class GamePackLibrary(Func<IEnumerable<(string Name, byte[] Data)>
         }
     }
 
+    private string? pinned;
+
+    /// <summary>
+    /// Kullanıcının elle seçtiği oyunun paket kimliği; null ise otomatik (bütün paketler, oyun satırlardan anlaşılır).
+    /// Seçiliyse yalnız o paket aranır ve bulanık arama ilk satırdan itibaren o pakette yapılır.
+    /// </summary>
+    public string? Pinned
+    {
+        get { lock (gate) return pinned; }
+        set { lock (gate) pinned = string.IsNullOrWhiteSpace(value) ? null : value; }
+    }
+
+    private string? detected;
+
+    /// <summary>
+    /// PS5'te çalışan oyunun paketi (bkz. <see cref="Ps5Status"/>); elle seçim yoksa elle seçilmiş gibi davranılır.
+    /// </summary>
+    public string? Detected
+    {
+        get { lock (gate) return detected; }
+        set { lock (gate) detected = string.IsNullOrWhiteSpace(value) ? null : value; }
+    }
+
+    /// <summary>
+    /// PS5'in bildirdiği oyun adına uyan paketin kimliği ("Mafia: The Old Country" ↔ "mafia-the-old-country"); harf ve
+    /// rakamlar karşılaştırılır, biri öbürünü içeriyorsa uyar (en uzun uyan seçilir). Yoksa null.
+    /// </summary>
+    public string? FindByGameName(string? name)
+    {
+        static string Plain(string text) => new([.. text.ToLowerInvariant().Where(char.IsLetterOrDigit)]);
+        if (string.IsNullOrWhiteSpace(name)) return null;
+        var wanted = Plain(name);
+        if (wanted.Length < 3) return null;
+        lock (gate)
+        {
+            LoadIfNeeded();
+            return infos.Where(info => Plain(info.Title) is var title && title.Length >= 3 && (title.Contains(wanted) || wanted.Contains(title)))
+                .OrderByDescending(info => info.Title.Length).Select(info => info.Id).FirstOrDefault();
+        }
+    }
+
+    /// <summary>Seçili (ya da PS5'te çalışan) oyunun paketi (yüklüyse); kilit altında çağrılır.</summary>
+    private int? PinnedIndex()
+    {
+        if ((pinned ?? detected) is not { } id) return null;
+        for (var index = 0; index < loadedPacks.Count; index++)
+            if (loadedPacks[index].Id == id) return index;
+        return null;
+    }
+
     /// <summary>Kurulu paketler; ilk çağrıda yüklenir.</summary>
     public IReadOnlyList<Info> Packs
     {
@@ -280,11 +330,21 @@ public sealed class GamePackLibrary(Func<IEnumerable<(string Name, byte[] Data)>
     {
         Dictionary<ulong, string> current;
         IReadOnlyList<GamePack> packs;
+        int? only;
         lock (gate)
         {
             LoadIfNeeded();
             current = entries;
             packs = loadedPacks;
+            only = PinnedIndex();
+        }
+        if (only is { } chosenPack)
+        {
+            // Elle seçilen oyun: yalnız onun paketi (aynı satır başka oyunda başka çevrilmiş olabilir).
+            if (PackKey.Key(text) is not { } pinnedKey || PackKey.Number(pinnedKey) is not { } pinnedNumber) return null;
+            var pack = packs[chosenPack];
+            lock (gate) scope = chosenPack;
+            return pack.Entries.GetValueOrDefault(pinnedNumber) ?? pack.Segments.GetValueOrDefault(pinnedNumber);
         }
         if (current.Count == 0 || PackKey.Key(text) is not { } key || PackKey.Number(key) is not { } number
             || !current.TryGetValue(number, out var turkish)) return null;
@@ -305,21 +365,65 @@ public sealed class GamePackLibrary(Func<IEnumerable<(string Name, byte[] Data)>
     /// </summary>
     public string? Nearest(string text)
     {
-        Dictionary<ulong, string> current;
-        PackFuzzyIndex? index;
+        Func<ulong, string?> lookup;
+        GamePack? pack;
         lock (gate)
         {
             LoadIfNeeded();
-            current = entries;
-            index = scope is { } chosen && chosen < loadedPacks.Count ? loadedPacks[chosen].Fuzzy : null;
+            var current = entries;
+            lookup = key => current.GetValueOrDefault(key);
+            if (PinnedIndex() is { } only)
+            {
+                // Elle seçilen oyun: bulanık arama ilk satırdan itibaren onun paketinde, Türkçesi de o paketten.
+                var pinnedPack = loadedPacks[only];
+                pack = pinnedPack;
+                lookup = key => pinnedPack.Entries.GetValueOrDefault(key) ?? pinnedPack.Segments.GetValueOrDefault(key);
+            }
+            else pack = scope is { } chosen && chosen < loadedPacks.Count ? loadedPacks[chosen] : null;
         }
-        return index?.Nearest(text, key => current.GetValueOrDefault(key)) is { } found ? current.GetValueOrDefault(found) : null;
+        if (pack is null) return null;
+        // Tek OCR düzeltmesiyle tam bulunan satır bulanık aramadan önce gelir (CouchSubs 6cfec49).
+        if (Corrected(text, pack, lookup) is { } corrected) return corrected;
+        return pack.Fuzzy?.Nearest(text, lookup) is { } found ? lookup(found) : null;
+    }
+
+    /// <summary>
+    /// Tek OCR düzeltmesiyle (<see cref="PackFuzzy.Variants"/>) oynanan oyunun paketinde tam bulunan satırın Türkçesi;
+    /// düzeltmelerin hepsi aynı Türkçeye çıkmıyorsa null.
+    /// </summary>
+    private static string? Corrected(string text, GamePack pack, Func<ulong, string?> lookup)
+    {
+        string? found = null;
+        foreach (var variant in PackFuzzy.Variants(text))
+        {
+            if (PackKey.Key(variant) is not { } key || PackKey.Number(key) is not { } number || !Contains(pack.Keys, number)
+                || lookup(number) is not { } turkish) continue;
+            if (found is not null && found != turkish) return null;
+            found = turkish;
+        }
+        return found;
     }
 
     /// <summary>Bulanık aramanın yapılacağı paketin kimliği (son tam eşleşmenin paketi); yoksa null.</summary>
     public string? SearchScope
     {
         get { lock (gate) return scope is { } chosen && chosen < infos.Count ? infos[chosen].Id : null; }
+    }
+
+    /// <summary>
+    /// Oynanan oyunun adı: elle seçilen oyunun ya da son tam eşleşmenin geldiği paketin başlığı; yoksa null. Yapay zekâya
+    /// bağlam olarak gider (CouchSubs e0243ec).
+    /// </summary>
+    public string? ScopeTitle
+    {
+        get
+        {
+            lock (gate)
+            {
+                if (PinnedIndex() is { } only) return infos[only].Title;
+                return scope is { } chosen && chosen < infos.Count ? infos[chosen].Title : null;
+            }
+        }
     }
 
     private static bool Contains(IReadOnlyList<ulong> sorted, ulong key)
@@ -376,7 +480,7 @@ public sealed class GamePackLibrary(Func<IEnumerable<(string Name, byte[] Data)>
         name.EndsWith(".json.gz", StringComparison.Ordinal) || name.EndsWith(".json", StringComparison.Ordinal);
 
     /// <summary>"mafia.json.gz" → "mafia"</summary>
-    internal static string BaseName(string fileName)
+    public static string BaseName(string fileName)
     {
         var name = Path.GetFileName(fileName);
         foreach (var suffix in new[] { ".gz", ".json" })

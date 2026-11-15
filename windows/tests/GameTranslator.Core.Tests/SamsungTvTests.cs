@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -36,6 +36,32 @@ public class SamsungTvTests
         Assert.Null(SamsungMessages.ConnectResult("{\"event\":\"ms.channel.ready\"}"));
         Assert.Null(SamsungMessages.ConnectResult("not json"));
         Assert.Throws<SsapException>(() => SamsungMessages.ConnectResult("{\"event\":\"ms.channel.unauthorized\"}"));
+        Assert.Throws<SsapException>(() => SamsungMessages.ConnectResult("{\"event\":\"ms.channel.timeOut\"}"));
+    }
+
+    /// #40: TV jetonsuz "connect" dönünce saklı jeton silinmemeli; silinirse her bağlantıda TV yeniden izin sorar.
+    [Fact]
+    public void EmptyTokenDoesNotReplaceSavedOne()
+    {
+        Assert.Equal("55", SamsungTokenHolder.KeptToken("55", ""));
+        Assert.Equal("77", SamsungTokenHolder.KeptToken("55", "77"));
+        Assert.Equal("", SamsungTokenHolder.KeptToken(null, ""));
+    }
+
+    /// #40: bekçinin bağlantısında TV yeni jeton verirse sonraki bağlantı onu kullanır ve jeton saklanır.
+    [Fact]
+    public void KeeperRemembersNewToken()
+    {
+        var saved = new List<string>();
+        var holder = new SamsungTokenHolder("", saved.Add);
+        holder.Received("");
+        Assert.Empty(saved);
+        holder.Received("88");
+        Assert.Equal("88", holder.Current);
+        holder.Received("88");
+        holder.Received("");
+        Assert.Equal("88", holder.Current);
+        Assert.Equal(["88"], saved);
     }
 
     [Fact]
@@ -53,4 +79,3 @@ public class SamsungTvTests
     public void LocatorDoesNotMoveToAnotherBrand() =>
         Assert.Null(TvLocator.Moved(new Tv("Salon", "1.1.1.1"), [new Tv("Salon", "1.1.1.2", TvBrand.Samsung)]));
 }
-

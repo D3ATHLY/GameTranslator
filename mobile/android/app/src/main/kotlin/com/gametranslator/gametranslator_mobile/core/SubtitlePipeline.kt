@@ -17,8 +17,8 @@ interface SubtitleSink {
 }
 
 /**
- * Okunan altyazıyı çevirip gönderen hat: gürültü temizliği → kararlılık → önbellek/çeviri → TV.
- * Windows'taki SubtitlePipeline.cs'in çekirdeği (oyun paketleri, bekletme ve dublaj yok).
+ * Okunan altyazıyı çevirip gönderen hat: gürültü temizliği → kararlılık → önbellek → oyun paketi/çeviri → TV.
+ * Windows'taki SubtitlePipeline.cs'in çekirdeği (bekletme ve dublaj yok).
  * [onRead] tek bir iş parçacığından çağrılır; çeviri [translateExecutor]'da yapılır, sonuçlar kilit altında işlenir.
  */
 class SubtitlePipeline(
@@ -51,6 +51,16 @@ class SubtitlePipeline(
     var onTranslateFailed: ((String) -> Unit)? = null
     /** Okunan ve temizlenen ham metin (boş olabilir); tanılama için. */
     var onReadText: ((String) -> Unit)? = null
+    /**
+     * Oyun paketi: kararlı satırın hazır Türkçesi (yoksa null). Çeviri motorundan önce, çeviri iş parçacığında bakılır;
+     * bulunursa motora gidilmez ve paketteki metin olduğu gibi gösterilir (sözlük de uygulanmaz).
+     */
+    @Volatile var packLookup: ((String) -> PackMatch?)? = null
+    /** Paketten gösterilen satır (kaynak, paket). */
+    var onPackHit: ((String, PackMatch) -> Unit)? = null
+    /** Paketten gösterilen satır sayısı. */
+    @Volatile var packHits = 0
+        private set
 
     /** Bir karenin okuması: [lines] yukarıdan aşağı satırlar, [box] yazının ekrandaki yeri. */
     fun onRead(lines: List<String>, box: TextBox?) {
@@ -84,13 +94,22 @@ class SubtitlePipeline(
 
     private fun request(number: Int, source: String, box: TextBox?) {
         translateExecutor.execute {
+            val packed = try {
+                packLookup?.invoke(source)?.takeIf { it.text.isNotBlank() }
+            } catch (error: Exception) {
+                null
+            }
             // İki satırlık altyazı tek cümledir; çevirmene tek satır olarak gider.
-            val translated = try {
+            val translated = packed?.text?.trim() ?: try {
                 translator.translate(source.replace('\n', ' '))?.trim()
             } catch (error: Exception) {
                 null
             }
             synchronized(lock) {
+                if (packed != null) {
+                    packHits++
+                    onPackHit?.invoke(source, packed)
+                }
                 if (translated.isNullOrEmpty()) {
                     if (number == onScreen) stabilizer.forgetSent()
                     onTranslateFailed?.invoke(source)

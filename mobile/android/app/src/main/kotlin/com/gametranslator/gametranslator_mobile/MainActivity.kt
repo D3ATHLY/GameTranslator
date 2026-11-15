@@ -23,6 +23,8 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         val messenger = flutterEngine.dartExecutor.binaryMessenger
         MethodChannel(messenger, "gt/bridge").setMethodCallHandler(::handle)
+        // Telefondan TV uygulaması kurma sihirbazı (tvinstall/).
+        com.gametranslator.gametranslator_mobile.tvinstall.TvInstallChannel.attach(this, messenger)
         EventChannel(messenger, "gt/events").setStreamHandler(object : EventChannel.StreamHandler {
             override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
                 Engine.onChanged = { state -> events.success(state) }

@@ -1,12 +1,26 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
+import argparse
 import io
+import json
 import os
 import tarfile
 
-app_dir = "tv/webos"
+# Seçeneksiz çalıştırıldığında çıktı eskisiyle aynıdır (bilgisayar uygulaması tv/packages/..._1.0.0_all.ipk'yı bekler).
+# Mobil uygulama paketi gerçek sürümle üretir:
+#   python scripts/package-ipk.py --version auto --out-dir mobile/android/app/src/main/assets/tv-app
+parser = argparse.ArgumentParser(description="GameTranslator LG (webOS) TV paketini üretir.")
+parser.add_argument("--app-dir", default="tv/webos", help="webOS uygulama klasörü")
+parser.add_argument("--out-dir", default="tv/packages", help="paketin yazılacağı klasör")
+parser.add_argument("--version", default="1.0.0", help="paket sürümü; 'auto' appinfo.json'daki sürümü kullanır")
+args = parser.parse_args()
+
+app_dir = args.app_dir
 package_id = "com.gametranslator.tv"
-version = "1.0.0"
+version = args.version
+if version == "auto":
+    with open(os.path.join(app_dir, "appinfo.json"), encoding="utf-8") as f:
+        version = json.load(f)["version"]
 
 control_content = f"""Package: {package_id}
 Version: {version}
@@ -65,8 +79,8 @@ def create_ar(filename, files):
             if size % 2 != 0:
                 f.write(b"\n")
 
-os.makedirs("tv/packages", exist_ok=True)
-out_path = "tv/packages/com.gametranslator.tv_1.0.0_all.ipk"
+os.makedirs(args.out_dir, exist_ok=True)
+out_path = os.path.join(args.out_dir, f"{package_id}_{version}_all.ipk").replace(os.sep, "/")
 create_ar(out_path, [
     ("debian-binary", b"2.0\n"),
     ("control.tar.gz", control_tar.getvalue()),

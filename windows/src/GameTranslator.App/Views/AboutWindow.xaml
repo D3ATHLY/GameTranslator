@@ -4,7 +4,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:t="clr-namespace:GameTranslator.App.Theme"
         Title="{t:T 'About GameTranslator'}" Width="460" SizeToContent="Height" ResizeMode="NoResize" ShowInTaskbar="False"
-        WindowStartupLocation="CenterOwner" Background="{DynamicResource backgroundBrush}" Foreground="{DynamicResource textPrimaryBrush}">
+        WindowStartupLocation="CenterOwner" Background="Transparent" Foreground="{DynamicResource textPrimaryBrush}">
     <StackPanel Margin="32">
         <Grid Width="88" Height="88">
                         <Image Source="/Assets/logo.png" RenderOptions.BitmapScalingMode="HighQuality" />
@@ -13,6 +13,7 @@
                     </Grid>
         <TextBlock Text="GameTranslator" Style="{StaticResource TitleText}" HorizontalAlignment="Center" Margin="0,12,0,0" />
         <TextBlock x:Name="Version" Style="{StaticResource HintText}" HorizontalAlignment="Center" Margin="0,4,0,12" />
+        <TextBlock Text="CouchSubs tabanlıdır · Copyright © 2026 Sinan Yorulmaz" Style="{StaticResource SecondaryText}" TextAlignment="Center" Margin="0,0,0,8" />
         <TextBlock Text="{t:T 'Free and open source under the GNU AGPL-3.0 license.'}" TextAlignment="Center" />
         <TextBlock Text="{t:T 'Remote Play connection by chiaki-ng (AGPL-3.0). Thanks to its developers.'}" Style="{StaticResource SecondaryText}" TextAlignment="Center" Margin="0,12,0,0" />
         <TextBlock Text="{t:T 'Translation model: OPUS-MT, University of Helsinki (CC BY 4.0).'}" Style="{StaticResource SecondaryText}" TextAlignment="Center" TextWrapping="Wrap" Margin="0,4,0,0" />

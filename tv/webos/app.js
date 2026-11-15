@@ -6,7 +6,7 @@
   'use strict';
 
   // TV uygulamasının sürümü: appinfo.json, tv-tizen/config.xml ve tv-android/app/build.gradle ile aynı tutulur.
-  var APP_VERSION = '1.0.0';
+  var APP_VERSION = '1.0.5';
   var t = window.t;
   var config = window.GAMETRANSLATOR_CONFIG || window.GAMETRANSLATOR_CONFIG || {};
   var platform = window.GAMETRANSLATOR_PLATFORM || window.GAMETRANSLATOR_PLATFORM;
@@ -25,6 +25,16 @@
   var placement = 'fixed';
   // Gösterilen satırın oyundaki İngilizce altyazının yeri (ekrana oranla), bilinmiyorsa null.
   var currentBox = null;
+  // Oyunun altyazısının gerçek yeri (örtme yerleşiminde çeviri buraya sığdırılır), ayarlardaki yazı boyu ve
+  // yazının şu an sığdırılmış olup olmadığı.
+  var currentSource = null;
+  var baseFontSize = 0;
+  var fitted = false;
+  // Oyunun altyazısının satır yüksekliği (ekran yüksekliğine oranla); bilinmiyorsa 0.
+  var currentLine = 0;
+  var coverBackground = '';
+  // Konuşmacı adının rengi; boşsa ad ayrı renkte yazılmaz.
+  var speakerColor = '';
 
   // Önceki satır bu süreden kısa göründüyse okunamamış olabilir; yeni satırın üstünde bir süre daha kalır.
   var PREVIOUS_HOLD_MS = 2500;
@@ -159,14 +169,17 @@
   }
 
   // paragraphs: görev paneli gibi başlık ve maddeli yazılar satır satır, sola yaslı gösterilir.
-  function showSubtitle(text, duration, box, paragraphs) {
+  function showSubtitle(text, duration, box, paragraphs, source, line) {
+    // source: oyunun altyazısının gerçek yeri (örtme yerleşiminde çeviri tam bu alana sığdırılır).
+    currentSource = paragraphs ? null : validBox(source);
+    currentLine = typeof line === 'number' && line > 0 ? line : 0;
     // Önceki satır artık ayrıca gösterilmez: iki kutu üst üste binmiş gibi görünüyor, aynı cümlenin iki okunuşu
     // da ikinci çeviri gibi duruyordu. Yeni satır eskisinin yerine geçer.
     hidePrevious();
     shownAt = Date.now();
     holdUntil = shownAt + Math.min(HOLD_MAX_MS, 2000 + text.length * 60);
     currentBox = validBox(box);
-    $('subtitle-text').textContent = text;
+    setSubtitleText($('subtitle-text'), text, paragraphs);
     $('subtitle-text').style.whiteSpace = paragraphs ? 'pre-line' : '';
     $('subtitle-text').style.textAlign = paragraphs ? 'left' : '';
     $('subtitle').className = '';
@@ -177,6 +190,29 @@
     // Geçersiz ya da çok kısa süre yazıyı gösterir göstermez kaldırmasın.
     var ms = duration > 0 ? Math.max(1000, duration) : Math.min(8000, 2000 + text.length * 60);
     hideTimer = setTimeout(function () { hideSubtitle('timer'); }, ms);
+  }
+
+  // Konuşmacı adları ("MARKOS: …", cümle ortasında başlayan ikinci konuşmacı dahil) ayarlarda açıksa ayrı renkte
+  // yazılır. Ad büyük harfle başlayan en çok üç sözcüktür ve satır başında ya da bir cümlenin bitiminde durur.
+  var SPEAKER = /(^|[.!?…”"]\s+|\n)([A-ZÇĞİÖŞÜÂÎÛ][^\s:.!?]*(?: [A-ZÇĞİÖŞÜÂÎÛ][^\s:.!?]*){0,2}):(?=\s)/g;
+  function setSubtitleText(el, text, paragraphs) {
+    if (!speakerColor || paragraphs) {
+      el.textContent = text;
+      return;
+    }
+    el.textContent = '';
+    var last = 0, match;
+    SPEAKER.lastIndex = 0;
+    while ((match = SPEAKER.exec(text)) !== null) {
+      var nameStart = match.index + match[1].length;
+      if (nameStart > last) el.appendChild(document.createTextNode(text.slice(last, nameStart)));
+      var name = document.createElement('span');
+      name.style.color = speakerColor;
+      name.textContent = match[2] + ':';
+      el.appendChild(name);
+      last = SPEAKER.lastIndex;
+    }
+    if (last < text.length) el.appendChild(document.createTextNode(text.slice(last)));
   }
 
   // Yazının ekrandaki gerçek yeri ve görünürlüğü (tanı için).
@@ -294,6 +330,7 @@
     el.style.transform = 'none';
     el.style.webkitTransform = 'none';
     cover.className = 'hidden';
+    unfit();
 
     // Altyazı yokken veya kutu tanımlı değilken örtü tek başına kalmasın
     if (!box || el.className === 'hidden') return;
@@ -303,7 +340,9 @@
     if (mode === 'below' && box.bottom > 0.88) mode = 'above';
     if (mode === 'above' && box.top < 0.12) mode = 'below';
 
-    if (mode === 'cover') {
+    if (mode === 'cover' && currentSource) {
+      fitToSource(el, cover, currentSource);
+    } else if (mode === 'cover') {
       // İngilizce altyazının tam üstünü örten koyu zemin
       var padX = 0.02; // Yatayda %2 pay
       var padY = 0.015; // Dikeyde %1.5 pay
@@ -343,6 +382,87 @@
     }
   }
 
+  // Çeviriyi oyunun altyazısının kapladığı alana sığdırır: aynı genişlikte sarılır, yazı boyu alana sığan en büyük
+  // boydur (ayarlardaki boyun 0,6–1,6 katı arasında). Böylece çeviri oyunun altyazısıyla aynı yerde, aynı satır
+  // düzeninde ve hemen hemen aynı boyda durur; zemin tek parçadır. En küçük boyda da sığmıyorsa zemin yazıya göre büyür.
+  function fitToSource(el, cover, box) {
+    var padX = 0.008, padY = 0.006;
+    var left = Math.max(0, box.left - padX), right = Math.min(1, box.right + padX);
+    var top = Math.max(0, box.top - padY), bottom = Math.min(1, box.bottom + padY);
+    // Çok dar altyazıda (tek sözcük) çeviri en az bu kadar yer bulur.
+    var minWidth = 0.16;
+    if (right - left < minWidth) {
+      var center = (left + right) / 2;
+      left = Math.max(0, center - minWidth / 2);
+      right = Math.min(1, center + minWidth / 2);
+    }
+    // Zemin önce oyunun altyazısının yerine konur; ölçüler ondan alınır (yüzde ve piksel karışmasın).
+    var place = function (l, t, r, b) {
+      cover.style.left = (l * 100).toFixed(3) + '%';
+      cover.style.top = (t * 100).toFixed(3) + '%';
+      cover.style.width = ((r - l) * 100).toFixed(3) + '%';
+      cover.style.height = ((b - t) * 100).toFixed(3) + '%';
+    };
+    place(left, top, right, bottom);
+    // Oyunun altyazısı alttan hiç görünmesin: zemin tam opaktır.
+    if (!fitted) coverBackground = cover.style.background;
+    cover.style.background = 'rgb(10, 10, 12)';
+    cover.className = '';
+    var area = cover.getBoundingClientRect();
+    var perX = area.width / (right - left), perY = area.height / (bottom - top);
+
+    var text = $('subtitle-text');
+    el.style.left = (left * 100).toFixed(3) + '%';
+    el.style.right = ((1 - right) * 100).toFixed(3) + '%';
+    el.style.bottom = 'auto';
+    el.style.top = (((top + bottom) / 2) * 100).toFixed(3) + '%';
+    el.style.transform = 'translateY(-50%)';
+    el.style.webkitTransform = 'translateY(-50%)';
+    text.style.padding = '0 6px';
+    text.style.lineHeight = '1.2';
+
+    // En büyük boy oyunun altyazısının boyudur (satır yüksekliği biliniyorsa); bilinmiyorsa ayarlardaki boy.
+    var base = baseFontSize || 46;
+    var low = Math.max(16, Math.round(base * 0.55));
+    var high = currentLine > 0 ? Math.round(currentLine * perY * 1.05) : Math.round(base * 1.15);
+    high = Math.max(low, Math.min(Math.round(base * 1.6), high));
+    var fits = function (size) {
+      text.style.fontSize = size + 'px';
+      var rect = text.getBoundingClientRect();
+      return rect.width <= area.width + 1 && rect.height <= area.height + 1;
+    };
+    var best = low;
+    if (fits(high)) best = high;
+    else if (fits(low)) {
+      var a = low, b = high;
+      while (b - a > 1) {
+        var mid = Math.floor((a + b) / 2);
+        if (fits(mid)) a = mid; else b = mid;
+      }
+      best = a;
+    }
+    text.style.fontSize = best + 'px';
+
+    // Yazı en küçük boyda da taşıyorsa zemin onu da içine alacak kadar büyür (tek parça kalır).
+    var rect = text.getBoundingClientRect();
+    var growTop = Math.max(0, area.top - rect.top + 2) / perY, growBottom = Math.max(0, rect.bottom - area.bottom + 2) / perY;
+    var growLeft = Math.max(0, area.left - rect.left + 2) / perX, growRight = Math.max(0, rect.right - area.right + 2) / perX;
+    if (growTop || growBottom || growLeft || growRight)
+      place(Math.max(0, left - growLeft), Math.max(0, top - growTop), Math.min(1, right + growRight), Math.min(1, bottom + growBottom));
+    fitted = true;
+  }
+
+  // Sığdırma yerleşiminden çıkınca yazının ayarlardaki boyu ve boşlukları geri gelir.
+  function unfit() {
+    if (!fitted) return;
+    fitted = false;
+    var text = $('subtitle-text');
+    $('subtitle-cover').style.background = coverBackground;
+    text.style.padding = '';
+    text.style.lineHeight = '';
+    if (baseFontSize) text.style.fontSize = baseFontSize + 'px';
+  }
+
   // Bazı TV'lerde sabit konumun ekran dışına taşmasını engeller.
   function keepOnScreen(el, cover) {
     if (placement === 'fixed') {
@@ -353,6 +473,7 @@
 
   function applyStyle(style) {
     if (style.fontSize) {
+      baseFontSize = style.fontSize;
       $('subtitle-text').style.fontSize = style.fontSize + 'px';
       $('subtitle-prev-text').style.fontSize = Math.round(style.fontSize * 0.8) + 'px';
     }
@@ -361,12 +482,14 @@
       $('subtitle-prev-text').style.color = style.color;
     }
     if (PLACEMENTS[style.placement]) placement = style.placement;
+    if (typeof style.speakerColor === 'string') speakerColor = style.speakerColor;
     if (typeof style.background === 'number') {
       var alpha = Math.max(0, Math.min(100, style.background)) / 100;
       $('subtitle-text').style.background = 'rgba(0, 0, 0, ' + alpha + ')';
       $('subtitle-prev-text').style.background = 'rgba(0, 0, 0, ' + (alpha * 0.83).toFixed(2) + ')';
       var coverEl = $('subtitle-cover');
-      if (coverEl) coverEl.style.background = 'rgba(0, 0, 0, ' + Math.max(0.92, alpha) + ')';
+      // Örtü İngilizce altyazıyı tamamen kapatmalı: %92 koyulukta beyaz yazı soluk da olsa seçiliyordu.
+      if (coverEl) coverEl.style.background = 'rgb(10, 10, 12)';
     }
     if (typeof style.bold === 'boolean') {
       $('subtitle-text').style.fontWeight = style.bold ? '700' : '600';
@@ -409,6 +532,7 @@
   function connect(address) {
     if (demoRunning()) stopDemo();
     if (eventSource) eventSource.close();
+    if (address !== server) failures = 0;
     server = address;
     $('waiting').className = 'hidden';
     setStatus('st-server', address);
@@ -419,8 +543,8 @@
     setStatus('st-conn', t('connecting'), 'muted');
     eventSource = new EventSource(address + '/events');
     eventSource.onopen = function () {
-      clearTimeout(scanTimer);
-      scanTimer = null;
+      failures = 0;
+      cancelScan();
       clearTimeout(dropTimer);
       dropTimer = null;
       setStatus('st-conn', t('connected'), 'ok');
@@ -438,12 +562,12 @@
       }
       setStatus('st-conn', t('reconnecting'), 'bad');
       // Bilgisayarın adresi değişmiş olabilir.
-      scheduleScan();
+      noteFailure();
     };
     onEvent('subtitle', function (data) {
       diag.subtitles++;
       renderDiag();
-      if (data.text) showSubtitle(data.text, data.duration, data.box, data.paragraphs === true);
+      if (data.text) showSubtitle(data.text, data.duration, data.box, data.paragraphs === true, data.source, data.line);
     });
     onEvent('clear', onClear);
     onEvent('screen', function (data) { showScreen(data.items, data.duration); });
@@ -477,23 +601,78 @@
   }
 
   // --- Bilgisayarı ağda bulma ---
-  // Bilgisayar TV uygulamasını açamıyorsa adres gelmez. Adresini söyleyebilen TV'lerde uygulama aynı ağı tarar.
+  // Bilgisayar TV uygulamasını açamıyorsa adres gelmez; kayıtlı adres de eskiyebilir (bilgisayarın IP'si değişti).
+  // Uygulama o zaman ağı tarar: TV'nin kendi ağını (adresini söyleyebiliyorsa) ve kayıtlı adresin ağını. Kayıtlı adres
+  // art arda FAILS_BEFORE_SCAN kez yanıt vermezse tarama kısa süre içinde başlar (CouchSubs aff58ea). LG webOS'ta
+  // platform.localAddress yoktu; tarama hiç başlamıyor, TV eski adreste sonsuza dek bekliyordu.
 
   var SERVER_PORT = 8787;
   var SCAN_PARALLEL = 24;
   var SCAN_TIMEOUT_MS = 1200;
-  var SCAN_PAUSE_MS = 5000;
+  var SCAN_PAUSE_MS = 30000;
+  var SCAN_SOON_MS = 3000;
+  var FAILS_BEFORE_SCAN = 3;
   var scanTimer = null;
+  var scanDue = 0;
   var scanning = false;
+  var failures = 0;
 
-  function scheduleScan() {
-    // EventSource birkaç saniyede bir yeniden dener ve her denemede buraya gelinir; bekleyen sayaç baştan
-    // başlatılırsa tarama hiç çalışmaz.
-    if (!platform.localAddress || scanning || scanTimer !== null) return;
+  // Bekleyen tarama daha erken başlayacaksa korunur; EventSource birkaç saniyede bir yeniden denediği için sayaç
+  // baştan kurulursa tarama hiç başlamazdı.
+  function scheduleScan(delay) {
+    if (scanning) return;
+    if (delay === undefined) delay = SCAN_PAUSE_MS;
+    var due = Date.now() + delay;
+    if (scanTimer !== null && scanDue <= due) return;
+    clearTimeout(scanTimer);
+    scanDue = due;
     scanTimer = setTimeout(function () {
       scanTimer = null;
       scanForServer();
-    }, SCAN_PAUSE_MS);
+    }, delay);
+  }
+
+  function cancelScan() {
+    clearTimeout(scanTimer);
+    scanTimer = null;
+  }
+
+  // Bağlantı hatası: kayıtlı adres art arda birkaç kez yanıt vermediyse ağ hemen taranır, yoksa bir süre beklenir.
+  function noteFailure() {
+    failures++;
+    scheduleScan(failures >= FAILS_BEFORE_SCAN ? SCAN_SOON_MS : SCAN_PAUSE_MS);
+  }
+
+  function subnetOf(address) {
+    var match = /^(?:https?:\/\/)?(\d+\.\d+\.\d+)\.\d+(?::\d+)?\/?$/.exec(address || '');
+    return match ? match[1] : null;
+  }
+
+  // Taranacak ağlar: TV'nin kendi ağı, sonra kayıtlı adresin ağı (aynıysa bir kez); ikisi de yoksa 192.168.1.
+  function scanSubnets(done) {
+    var fromServer = subnetOf(server || load('server'));
+    function finish(ip) {
+      var list = [];
+      var own = subnetOf(ip);
+      if (own) list.push(own);
+      if (fromServer && fromServer !== own) list.push(fromServer);
+      if (!list.length) list.push('192.168.1');
+      done(list);
+    }
+    if (!platform.localAddress) return finish(null);
+    var answered = false;
+    function once(ip) {
+      if (answered) return;
+      answered = true;
+      finish(ip);
+    }
+    // Adresi soran servis yanıt vermezse tarama kayıtlı adresin ağıyla sürer.
+    setTimeout(function () { once(null); }, 3000);
+    try {
+      platform.localAddress(once);
+    } catch (e) {
+      once(null);
+    }
   }
 
   function probe(address, done) {
@@ -521,16 +700,20 @@
 
   function scanForServer() {
     if (scanning) return;
-    var runWithSubnet = function (subnet) {
-      if (!subnet) return scheduleScan();
-      scanning = true;
-      var next = 1, active = 0, found = false;
+    cancelScan();
+    scanning = true;
+    scanSubnets(function (subnets) {
+      var addresses = [];
+      for (var s = 0; s < subnets.length; s++) {
+        for (var host = 1; host <= 254; host++) addresses.push('http://' + subnets[s] + '.' + host + ':' + SERVER_PORT);
+      }
+      var next = 0, active = 0, found = false;
       function pump() {
-        while (!found && active < SCAN_PARALLEL && next <= 254) {
+        while (!found && active < SCAN_PARALLEL && next < addresses.length) {
           active++;
-          tryAddress('http://' + subnet + '.' + (next++) + ':' + SERVER_PORT);
+          tryAddress(addresses[next++]);
         }
-        if (!found && !active && next > 254) {
+        if (!found && !active && next >= addresses.length) {
           scanning = false;
           scheduleScan();
         }
@@ -542,30 +725,14 @@
           if (!ok) return pump();
           found = true;
           scanning = false;
-          // Aynı bilgisayarsa EventSource zaten kendisi yeniden bağlanır.
-          if (address !== server) {
-            save('server', address);
-            connect(address);
-          }
+          // Bulunan adres kaydedilir: TV bir sonraki açılışta eski adrese takılmasın.
+          save('server', address);
+          // Aynı bilgisayarsa EventSource kendisi yeniden bağlanır; kapanıp vazgeçtiyse (CLOSED) yeniden kurulur.
+          if (address !== server || (eventSource && eventSource.readyState === 2)) connect(address);
         });
       }
       pump();
-    };
-
-    if (platform.localAddress) {
-      platform.localAddress(function (ip) {
-        var match = /^(\d+\.\d+\.\d+)\.\d+$/.exec(ip || '');
-        if (match) {
-          runWithSubnet(match[1]);
-        } else {
-          var fallbackMatch = /^http:\/\/(\d+\.\d+\.\d+)\.\d+/.exec(server || load('server') || '');
-          runWithSubnet(fallbackMatch ? fallbackMatch[1] : '192.168.1');
-        }
-      });
-    } else {
-      var fallbackMatch = /^http:\/\/(\d+\.\d+\.\d+)\.\d+/.exec(server || load('server') || '');
-      runWithSubnet(fallbackMatch ? fallbackMatch[1] : '192.168.1');
-    }
+    });
   }
 
   // --- Demo ---

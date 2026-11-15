@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 using System.IO;
 using System.Net.Http;
@@ -23,7 +23,7 @@ public sealed class LiveServices : IAppServices
     public Task<OnlineKeyCheck> CheckOnlineKeyAsync(string key) => DeepLTranslator.CheckAsync(key);
 
     public ITextTranslator? MakeGeminiTranslator(string key, ITextTranslator? fallback) =>
-        new AiTranslator(AiProvider.Gemini, key, model: null, fallback);
+        new AiTranslator(AiProvider.Gemini, key, model: null, fallback, game: () => CommunityPatchManager.Shared.PlayedGameTitle);
 
     public async Task<OnlineKeyCheck> CheckGeminiKeyAsync(string key)
     {
@@ -35,6 +35,9 @@ public sealed class LiveServices : IAppServices
     public IAudioOutput? Audio { get; } = new WindowsAudioOutput();
     public IUpdater? Updater { get; } = new Updater();
     public IFirewall? Firewall { get; } = new WindowsFirewall();
+    public string? HistoryFile { get; } = Path.Combine(AppPaths.Data, "history.json");
+    public LinePool? Pool { get; } = new(Path.Combine(AppPaths.Data, "pool.json"),
+        "GameTranslator " + AppVersion.Current(System.Reflection.Assembly.GetEntryAssembly() ?? typeof(LiveServices).Assembly));
 
     public Task<IReadOnlyList<ConsoleInfo>> DiscoverConsolesAsync() => ConsoleDiscovery.DiscoverAsync();
 
@@ -115,8 +118,13 @@ public sealed class LiveServices : IAppServices
         }
     }
 
+    /// <summary>Geliştirme aracı (<see cref="Replay"/>): doluysa görüntü PS5 yerine buradan gelir.</summary>
+    public static Func<IStreamSession>? ReplayStream { get; set; }
+
     public IStreamSession MakeStream(RegisteredConsole? console, byte[]? accountId, UserSettings? settings = null)
     {
+        if (ReplayStream is { } replay) return replay();
+
         if (settings?.VideoSource == VideoSourceType.DesktopScreen || settings?.VideoSource == VideoSourceType.CaptureCard)
         {
             return new DesktopCaptureStreamSession(settings?.DesktopWindowName, settings?.ScreenIndex ?? 0);
@@ -131,7 +139,8 @@ public sealed class LiveServices : IAppServices
         return new WindowCaptureStreamSession(cons, accountId);
     }
 
-    public IKeeper MakeKeeper(LgTv tv, string? key, IReadOnlyDictionary<string, string> parameters, Func<bool> appConnected, Action<LgTv> onMoved)
+    public IKeeper MakeKeeper(LgTv tv, string? key, IReadOnlyDictionary<string, string> parameters, Func<bool> appConnected, Action<LgTv> onMoved,
+                       Action<string> onKey)
     {
         if (tv.Brand == TvBrand.AndroidTv)
         {
@@ -140,12 +149,14 @@ public sealed class LiveServices : IAppServices
         }
         if (tv.Brand == TvBrand.Samsung)
         {
+            // TV bağlantıda yeni jeton verirse sonraki bağlantılar onu kullanır ve saklanır (TV her seferinde izin sormasın).
+            var token = new SamsungTokenHolder(key, onKey);
             var samsungLocator = new TvLocator(tv, async target =>
             {
-                var client = new SamsungClient(target, key);
+                var client = new SamsungClient(target, token.Current);
                 try
                 {
-                    await client.ConnectAsync();
+                    token.Received(await client.ConnectAsync());
                     return client;
                 }
                 catch
@@ -338,6 +349,114 @@ public sealed class LiveServices : IAppServices
     }
 
     public ITextReader? MakeReader(string language) => WindowsOcrReader.Create(language);
+
+    /// <summary>PP-OCR modelinin klasörü (%LOCALAPPDATA%\GameTranslator\models\ppocr).</summary>
+    private static readonly string PpOcrDirectory = Path.Combine(AppPaths.Models, "ppocr");
+    private static readonly object PpOcrGate = new();
+    private static PpOcrReader? ppOcr;
+    private static bool ppOcrEnglish;
+    private static bool ppOcrFailed;
+
+    /// <summary>
+    /// Altyazı okuyucusu: Windows'un yazı tanıması, PP-OCR modeli kuruluysa onunla birlikte (bozuk okunan satır güçlü
+    /// okuyucuyla yeniden okunur). Model yoksa ya da açılamazsa yalnız Windows okuyucu. Model oturumları uygulama
+    /// boyunca tek örnektir ve okuma hatları arasında paylaşılır (eşzamanlı çağrıya dayanıklıdır).
+    /// </summary>
+    public ITextReader? MakeSubtitleReader(string language)
+    {
+        var fast = WindowsOcrReader.Create(language);
+        if (fast is null || PpOcrShared(language) is not { } strong) return fast;
+        return new HybridReader(fast, strong)
+        {
+            LooksMisread = text => SubtitlePipeline.ExtraMisreadCheck?.Invoke(text) ?? false,
+            Score = text => (SubtitlePipeline.ExtraReadingScore ?? OcrNoise.Score)(text),
+            Repair = text => OcrConfusions.Repair(text, SubtitlePipeline.ExtraWordCheck),
+            Log = SubtitleLog.Write,
+        };
+    }
+
+    /// <summary>
+    /// Güçlü okuyucunun modelleri (PP-OCR, ~24 MB) yoksa uygulama açılışında arka planda indirilir; dosyalar boyut ve
+    /// SHA-256 ile doğrulanır (<see cref="ModelStore"/>). İndirme bitince sonraki "Çeviriyi Başlat"ta kullanılır. İnternet
+    /// yoksa ya da indirme başarısız olursa uygulama yalnız Windows'un okuyucusuyla çalışır; sonraki açılışta yeniden denenir.
+    /// </summary>
+    /// <summary>
+    /// Oyun paketlerinin yeni ve düzeltilmiş sürümleri paket sunucusundan (CouchSubs'ınki, izinle) iner: haftada bir
+    /// bakılır, SHA-256 ile doğrulanır, kullanıcının paket klasörüne konur ve paketler yeniden okunur. Adres yoksa kapalı.
+    /// </summary>
+    public static void RefreshPacksInBackground()
+    {
+        if (PackUpdater.ConfiguredBaseUrl() is not { } url) return;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var bundled = GamePackLibrary.EmbeddedPacks().ToDictionary(pack => GamePackLibrary.BaseName(pack.Name),
+                    pack => Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(pack.Data)));
+                using var updater = new PackUpdater(url, GamePackLibrary.UserDirectory, Path.Combine(AppPaths.Data, "packs-remote.json"))
+                {
+                    BundledSha256 = id => bundled.GetValueOrDefault(id),
+                };
+                var result = await updater.RefreshAsync().ConfigureAwait(false);
+                if (!result.Changed) return;
+                CommunityPatchManager.Shared.Reload();
+                SubtitleLog.Write("paketler güncellendi: " + string.Join(", ", result.Downloaded.Concat(result.Removed)));
+            }
+            catch (Exception error)
+            {
+                SubtitleLog.Write($"paketler güncellenemedi ({error.GetType().Name}); sonraki açılışta yeniden denenir");
+            }
+        });
+    }
+
+    public static void DownloadReaderModelsInBackground()
+    {
+        var store = new ModelStore(PpOcrDirectory, [.. PpOcrReader.Files, PpOcrReader.EnglishFile]);
+        if (store.IsInstalled) return;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                SubtitleLog.Write("güçlü okuyucu: modeller indiriliyor");
+                await store.DownloadAsync(null, CancellationToken.None);
+                SubtitleLog.Write("güçlü okuyucu: modeller indirildi");
+            }
+            catch (Exception error)
+            {
+                SubtitleLog.Write($"güçlü okuyucu: modeller indirilemedi ({error.GetType().Name})");
+            }
+        });
+    }
+
+    private static PpOcrReader? PpOcrShared(string language)
+    {
+        lock (PpOcrGate)
+        {
+            // Oyun dili İngilizceye (ya da İngilizceden) değiştiyse okuyucu ek modelle (ya da onsuz) yeniden kurulur.
+            // Ölçüm için (replay): güçlü okuyucu olmadan çalıştırma.
+            if (Environment.GetEnvironmentVariable("GAMETRANSLATOR_NO_PPOCR") == "1") return null;
+            var english = PpOcrReader.HasEnglish(PpOcrDirectory, language);
+            if (ppOcr is not null && ppOcrEnglish == english) return ppOcr;
+            if (ppOcrFailed || !PpOcrReader.IsInstalled(PpOcrDirectory)) return ppOcr;
+            try
+            {
+                // Eski okuyucu kapatılmaz: çalışan bir okuma hattı onu hâlâ kullanıyor olabilir.
+                ppOcr = new PpOcrReader(PpOcrDirectory, language)
+                {
+                    Score = text => (SubtitlePipeline.ExtraReadingScore ?? OcrNoise.Score)(text),
+                };
+                ppOcrEnglish = english;
+                SubtitleLog.Write("güçlü okuyucu: PP-OCR modeli yüklendi" + (ppOcr.UsesEnglish ? " (İngilizce tanıma modeliyle)" : ""));
+            }
+            catch (Exception error)
+            {
+                // Model açılamadıysa (bozuk dosya, yerel kitaplık) her seferinde yeniden denenmez.
+                ppOcrFailed = true;
+                SubtitleLog.Write($"güçlü okuyucu: PP-OCR modeli açılamadı ({error.GetType().Name})");
+            }
+            return ppOcr;
+        }
+    }
     public bool HasOcrLanguage(string language) => WindowsOcrReader.HasLanguage(language);
 
     /// <summary>Android TV: TV açıkken ADB üzerinden uygulamanın açık ve PC'ye bağlı kalmasını sağlar. IP değişirse dinamik olarak ağda bulur.</summary>

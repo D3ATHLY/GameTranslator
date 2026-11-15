@@ -114,6 +114,95 @@ public sealed class Reading
         return candidates.Where(reading => WordCount(reading.Text) >= 3).MaxBy(reading => reading.Box!.Value.Bottom) ?? Empty;
     }
 
+    /// <summary>
+    /// Bazı oyunlar konuşmacı adını sözün üstünde ayrı bir satırda, büyük harflerle ve iki noktasız gösterir
+    /// ("MARKOS" / "We have no option but to try!"). Ad ilk söz satırının başına "MARKOS: …" olarak taşınır; böylece
+    /// adı satır içinde gösteren oyunlarla aynı biçim olur (ad cümlenin öznesi sanılmaz, bölünen cümleler birleşir).
+    /// </summary>
+    public Reading WithSpeakerLine()
+    {
+        if (Lines.Count < 2 || IsHeading(Lines[1].Text)) return this;
+        // Ad büyük harfle ("MARKOS") ya da baş harfi büyük tek sözcükle ("Sojiro", "Manager") yazılır. İkincisi yalnız
+        // ad kutusu sözün sol üstündeyse sayılır (ortalı "Yeah / I know." iki satırlık altyazıdır) ve alttaki satır yeni
+        // bir cümle başlatmalı ("Sojiro / will be taking care of me." sarılmış tek cümledir).
+        if (!IsSpeakerLine(Lines[0].Text) && !(IsTitleName(Lines[0].Text) && StartsSentence(Lines[1].Text) && NameBoxAbove(Lines[0], Lines[1])))
+            return this;
+        var (name, first) = (Lines[0] with { Text = Lines[0].Text.Trim().TrimEnd('.') }, Lines[1]);
+        var box = name.Box is { } a && first.Box is { } b ? a.Union(b) : first.Box ?? name.Box;
+        return new Reading([first with { Text = $"{name.Text.Trim()}: {first.Text.Trim()}", Box = box }, .. Lines.Skip(2)]);
+    }
+
+    /// <summary>Konuşmada tek başına satır olabilen sözcükler; ad sayılmaz.</summary>
+    private static readonly HashSet<string> Interjections = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "yeah", "yes", "no", "okay", "ok", "wait", "hey", "look", "listen", "well", "sorry", "thanks", "please", "hello",
+        "right", "fine", "sure", "come", "run", "stop", "go", "now", "then", "hmm", "huh", "oh", "ah", "uh", "um", "what",
+        "why", "how", "who", "where", "really", "maybe", "never", "help", "quiet", "enough", "again", "here", "there",
+    };
+
+    /// <summary>
+    /// Baş harfi büyük, gerisi küçük bir iki sözcük: "Sojiro", "Manager", "Tifa's Dad". Sonda okunan nokta ("Barret.")
+    /// sayılmaz.
+    /// </summary>
+    internal static bool IsTitleName(string text)
+    {
+        var name = text.Trim().TrimEnd('.');
+        var words = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return words.Length is 1 or 2 && name.Length is >= 3 and <= 20 && !Interjections.Contains(words[0]) &&
+               words.All(word => word.Length >= 2 && char.IsUpper(word[0]) && word.Skip(1).All(c => char.IsLower(c) || c is '-' or '\'' or '’'));
+    }
+
+    /// <summary>Ad kutusu sözün sol üstünde mi: sol kenarı sözünkinden sağda değil, ortası belirgin biçimde solda.</summary>
+    private static bool NameBoxAbove(TextLine name, TextLine speech)
+    {
+        if (name.Box is not { } a || speech.Box is not { } b) return false;
+        return a.Left <= b.Left + 0.02 && (a.Left + a.Right) / 2 < ((b.Left + b.Right) / 2) - 0.05;
+    }
+
+    /// <summary>Satır yeni bir cümle başlatıyor mu: ilk harfi büyük (önündeki "..." ya da tırnak sayılmaz).</summary>
+    private static bool StartsSentence(string text)
+    {
+        var first = text.FirstOrDefault(char.IsLetterOrDigit);
+        return first != default && (char.IsUpper(first) || char.IsDigit(first));
+    }
+
+    /// <summary>En çok üç sözcüklü, tümü büyük harf, noktalamasız satır: konuşmacı adı ("MARKOS", "YOUNG ALEXIOS").</summary>
+    internal static bool IsSpeakerLine(string text)
+    {
+        var trimmed = text.Trim();
+        var letters = trimmed.Where(char.IsLetter).ToList();
+        return letters.Count >= 2 && letters.All(char.IsUpper) && WordCount(trimmed) <= 3 &&
+               trimmed.All(c => char.IsLetter(c) || c is ' ' or '-' or '.' or '\'' or '’');
+    }
+
+    /// <summary>
+    /// Başlık, menü ya da ekran yazısı gibi duran satırlardan oluşan okuma boş sayılır ("Engraving Challenges",
+    /// "SORT BY: CATEGORY", "LEVEL 2", tek başına konuşmacı adı). Konuşma içeren okumaya dokunulmaz.
+    /// </summary>
+    public Reading WithoutHeadings() => Lines.Count > 0 && Lines.All(line => IsHeading(line.Text)) ? Empty : this;
+
+    private static readonly HashSet<string> SmallWords = new(StringComparer.OrdinalIgnoreCase)
+        { "a", "an", "the", "of", "and", "or", "to", "in", "on", "for", "by", "at", "with", "&" };
+
+    /// <summary>
+    /// Cümle gibi bitmeyen, virgülsüz, en çok beş sözcüklü ve ya tümü büyük harf ya da her sözcüğü büyük harfle başlayan
+    /// satır ("Gear Visual Customization", "ACHAIA"). "Thank you" ya da "Hold the gate" başlık değildir.
+    /// </summary>
+    internal static bool IsHeading(string text)
+    {
+        var trimmed = text.Trim();
+        if (trimmed.Length == 0) return true;
+        if (SubtitleStabilizer.EndsSentence(trimmed) || trimmed.Contains(',') || trimmed.EndsWith("--", StringComparison.Ordinal)) return false;
+        var words = trimmed.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Where(word => word.Any(char.IsLetter)).ToList();
+        if (words.Count is 0 or > 5) return words.Count == 0;
+        var letters = trimmed.Where(char.IsLetter).ToList();
+        if (letters.All(char.IsUpper)) return true;
+        // Mesafe ve sayaç göstergeleri ("19m", "12 m", "x3"): rakam ve en çok iki harf.
+        if (letters.Count <= 2 && trimmed.Any(char.IsDigit)) return true;
+        if (words.Count < 2) return false;
+        return words.All(word => SmallWords.Contains(word) || char.IsUpper(word.First(char.IsLetter)));
+    }
+
     /// <summary>Bloğun son satırının hemen altında ve yatayda onunla üst üste binen satır o bloğa aittir.</summary>
     private static bool Belongs(TextBox box, List<TextLine> block, TextBox area)
     {
@@ -151,6 +240,12 @@ public static class ButtonPrompts
     /// <summary>Simge yazı tanımada harfe dönüşebilir; yalnız ipucu kalıbında düğme sayılır.</summary>
     private static readonly HashSet<string> Lookalikes = new(StringComparer.Ordinal) { "X", "O" };
 
+    /// <summary>
+    /// Düğme adının yanlış okunmuş hali: "R1" → "RI" / "Rl", "L2" → "LZ". Yalnız satır başında ve cümle gibi bitmeyen
+    /// kısa satırda düğme sayılır ("RI (Hold) Pull", "LI Spider Barrage"); "Li, come here." konuşmadır.
+    /// </summary>
+    private static readonly HashSet<string> MisreadButtons = new(StringComparer.Ordinal) { "RI", "LI", "Rl", "Ll", "RZ", "LZ" };
+
     private static readonly HashSet<string> Verbs = new(StringComparer.OrdinalIgnoreCase)
     {
         "press", "hold", "tap", "push", "use", "mash", "release",
@@ -159,6 +254,22 @@ public static class ButtonPrompts
     private static readonly char[] Separators = [' ', '\t', '+', '/'];
     private static readonly char[] Brackets = ['(', ')', '[', ']', '{', '}', '<', '>', '「', '」'];
 
+    /// <summary>
+    /// Oyun arayüzü satırı: içinde iki ya da daha çok düğme etiketi ("Select(O)", "(S)", "(OFF)") olan çubuk ya da
+    /// ondalıklı sayı taşıyan kısa gösterge ("Movement 1.8", "Bonus Action Movement 0.0"). Cümle gibi biten satır
+    /// arayüz sayılmaz.
+    /// </summary>
+    private static bool IsInterfaceBar(string line)
+    {
+        if (SubtitleStabilizer.EndsSentence(line)) return false;
+        var labels = System.Text.RegularExpressions.Regex.Matches(line, @"\((?:[A-Z]{1,3}|[A-Z]{2,4})\)").Count;
+        // Tek başına "O" / "X" de düğmedir ("Select) O Actions Sort Tooltips (OFF) O Close").
+        var tokens = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (labels >= 2 || labels + tokens.Count(Lookalikes.Contains) >= 3) return true;
+        var words = tokens.Count(token => token.Count(char.IsLetter) >= 2);
+        return words <= 6 && System.Text.RegularExpressions.Regex.IsMatch(line, @"(?<![\w.])\d+\.\d(?![\w.])");
+    }
+
     public static bool IsPrompt(string line)
     {
         var tokens = line.Split(Separators, StringSplitOptions.RemoveEmptyEntries)
@@ -166,20 +277,37 @@ public static class ButtonPrompts
             .Where(token => token.Length > 0)
             .ToList();
         if (tokens.Count == 0) return false;
+        if (IsInterfaceBar(line)) return true;
+        // Tuş simgesi noktalama okunmuş etkileşim yazısı (":Read message", ":Pillage remains"): simge, ardından cümle gibi
+        // bitmeyen kısa bir eylem.
+        var trimmedLine = line.TrimStart();
+        if (trimmedLine.Length > 1 && trimmedLine[0] is ':' or ';' or '•' or '©' or '®' && char.IsUpper(trimmedLine.TrimStart(':', ';', '•', '©', '®', ' ')[0]) &&
+            tokens.Count <= 5 && !SubtitleStabilizer.EndsSentence(line))
+            return true;
         var first = tokens[0];
         var words = tokens.Count(token => !Buttons.Contains(token) && token.Any(char.IsLetter));
 
         // "R2 Swing", "△ Pick up", "L1 R1 Spartan Rage"
         if (Buttons.Contains(first)) return words <= 5;
+        if (MisreadButtons.Contains(first) && tokens.Count >= 2 && words <= 6 && !SubtitleStabilizer.EndsSentence(line)) return true;
         // "PHOTO MODE L1 + R1": düğme sonda, önünde kısa ve noktalamasız bir eylem adı.
         if (Buttons.Contains(tokens[^1]) && words <= 4 && !SubtitleStabilizer.EndsSentence(line)) return true;
+        // Ekranın altındaki ipucu çubuğu: "X Pick up Select(O) Actions Sort Tooltips (OFF) O Close". Düğmeyle başlar,
+        // içinde en az bir düğme daha vardır, cümle gibi bitmez ve sözcüklerinin çoğu büyük harfle başlar.
+        if (Lookalikes.Contains(first) && tokens.Count is >= 4 and <= 16 && !SubtitleStabilizer.EndsSentence(line) &&
+            tokens.Skip(1).Any(token => Lookalikes.Contains(token) || Buttons.Contains(token)) &&
+            tokens.Count(token => char.IsUpper(token[0])) * 3 >= tokens.Count * 2)
+            return true;
         // "X Interact", "O Back": ardından kısa, büyük harfle başlayan, noktalamasız bir eylem gelir.
         if (Lookalikes.Contains(first) && tokens.Count is >= 2 and <= 4 && char.IsUpper(tokens[1][0]) &&
             !SubtitleStabilizer.EndsSentence(line))
             return true;
-        // "Press ✕ to jump", "Hold R2 to aim"
+        // "Press ✕ to jump", "Hold R2 to aim"; düğme simgesi harf olmayan bir işarete dönüşebilir ("PRESS @ TO CONTINUE").
         if (Verbs.Contains(first) && tokens.Count is >= 2 and <= 10)
-            return Buttons.Contains(tokens[1]) || Lookalikes.Contains(tokens[1]);
+            return Buttons.Contains(tokens[1]) || Lookalikes.Contains(tokens[1]) || MisreadButtons.Contains(tokens[1]) ||
+                   (tokens[1].Length <= 2 && !tokens[1].Any(char.IsLetterOrDigit)) ||
+                   // "PRESS e TO CONTINUE": düğme simgesi tek harf okunmuş, ardından "to" geliyor.
+                   (tokens.Count >= 4 && tokens[1].Length <= 2 && string.Equals(tokens[2], "to", StringComparison.OrdinalIgnoreCase));
         return false;
     }
 }

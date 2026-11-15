@@ -109,6 +109,50 @@ public class SubtitlePipelineTests
     private static string[] Lines(params (string Text, int Count)[] runs) =>
         [.. runs.SelectMany(run => Enumerable.Repeat(run.Text, run.Count))];
 
+    /// <summary>Okumayı test bırakana kadar bekletir (takılan yazı tanıma).</summary>
+    private sealed class BlockingReader(string text) : ITextReader
+    {
+        public readonly ManualResetEventSlim Entered = new();
+        public readonly ManualResetEventSlim Release = new();
+        public string Read(Frame image)
+        {
+            Entered.Set();
+            Release.Wait(TimeSpan.FromSeconds(10));
+            return text;
+        }
+    }
+
+    // Takılan okuma hat sıfırlandıktan sonra bitince eski satır TV'ye gitmez (FrameGate ile birlikte, 2026-11-13).
+    [Fact]
+    public async Task ReadFinishingAfterResetIsDropped()
+    {
+        var sender = new FakeSender();
+        var translator = new FakeTranslator();
+        var reader = new BlockingReader("Hold the gate.");
+        var pipeline = new SubtitlePipeline(reader, translator, sender);
+        var running = pipeline.ProcessAsync(Image, new CropRegion());
+        Assert.True(reader.Entered.Wait(TimeSpan.FromSeconds(5)));
+        pipeline.Reset();
+        reader.Release.Set();
+        await running;
+        Assert.Empty(translator.Requested);
+        Assert.Empty(sender.Sent);
+    }
+
+    [Fact]
+    public async Task BlockedReadIsTranslatedWhenNotReset()
+    {
+        var translator = new FakeTranslator();
+        var reader = new BlockingReader("Hold the gate.");
+        var pipeline = new SubtitlePipeline(reader, translator, new FakeSender());
+        var running = pipeline.ProcessAsync(Image, new CropRegion());
+        Assert.True(reader.Entered.Wait(TimeSpan.FromSeconds(5)));
+        reader.Release.Set();
+        await running;
+        for (var i = 0; i < 50 && translator.Requested.Count == 0; i++) await Task.Delay(20);
+        Assert.Equal(["Hold the gate."], translator.Requested);
+    }
+
     [Fact]
     public async Task ButtonPromptsAreNotTranslated()
     {
@@ -159,15 +203,18 @@ public class SubtitlePipelineTests
         await Run(pipeline, 4);
         pipeline.Reset();
         Assert.Equal(["TR: Hold the gate.", "Koş!"], sender.Sent);
-        Assert.Equal(6, log.Count);
+        Assert.Equal(8, log.Count);
         Assert.StartsWith("ilk kare: oturum başından ", log[0]);
         Assert.StartsWith("ilk yazı: ", log[1]);
         Assert.EndsWith("\"Hold the gate.\"", log[1]);
         Assert.Equal("#1 \"Hold the gate.\" → çeviriye", log[2]);
         Assert.StartsWith("#1 çeviri:motor ", log[3]);
         Assert.EndsWith(" ms, gösterildi", log[3]);
-        Assert.Equal("#2 \"Run!\" → paket:mafia", log[4]);
-        Assert.Equal("hat sıfırlandı (paketten 1 satır)", log[5]);
+        Assert.StartsWith("#1 süre: okuma ", log[4]);
+        Assert.Equal("#2 \"Run!\" → paket:mafia", log[5]);
+        Assert.StartsWith("#2 süre: okuma ", log[6]);
+        Assert.Contains("çeviri - ms", log[6]);
+        Assert.Equal("hat sıfırlandı (paketten 1 satır)", log[7]);
     }
 
     /// <summary>Önbellekten dönen satır günlükte "önbellek" diye görünür.</summary>
@@ -193,6 +240,62 @@ public class SubtitlePipelineTests
             cache.Store(text, "TR: " + text);
             return Task.FromResult("TR: " + text);
         }
+    }
+
+    /// Konuşmacı adı bir karede okunup ötekinde kaçınca aynı çeviri iki kez (adlı ve adsız) gösteriliyordu.
+    [Fact]
+    public async Task RereadWithoutTheSpeakerNameIsNotANewLine()
+    {
+        var sender = new FakeSender();
+        var pipeline = new SubtitlePipeline(
+            new FakeReader("Kraven: But you sensed nothing.", "Kraven: But you sensed nothing.", "But you sensed nothing.", "But you sensed nothing.",
+                "Kraven: But you sensed nothing."),
+            new TurkishTranslator(), sender);
+        var log = new List<string>();
+        pipeline.Log = log.Add;
+        pipeline.PackLookup = _ => null;
+        pipeline.CleanWait = 0;
+        pipeline.PackWait = 0;
+        await Run(pipeline, 5);
+        Assert.True(sender.Sent.Distinct().SequenceEqual(["Kraven: Ama hiçbir şey hissetmedin."]),
+            $"gönderilen: [{string.Join(" | ", sender.Sent)}]\n{string.Join("\n", log)}");
+        Assert.Contains(log, line => line.StartsWith("yeniden-okuma: \"But you sensed nothing.\"", StringComparison.Ordinal));
+    }
+
+    /// <summary>Kaynağa benzemeyen çeviri verir ("TR: …" uzun satırda "zaten hedef dilde" sayılıyor).</summary>
+    private sealed class TurkishTranslator : ITextTranslator
+    {
+        public Task<string> TranslateAsync(string text, CancellationToken cancellationToken = default) =>
+            Task.FromResult(text.StartsWith("Kraven:", StringComparison.Ordinal) ? "Kraven: Ama hiçbir şey hissetmedin." : "Ama hiçbir şey hissetmedin.");
+    }
+
+    /// <summary>Kaynağı aynen geri verir (büyü adı, özel ad).</summary>
+    private sealed class EchoTranslator : ITextTranslator
+    {
+        public Task<string> TranslateAsync(string text, CancellationToken cancellationToken = default) => Task.FromResult(text);
+    }
+
+    /// Çevirisi kendisiyle aynı dönen konuşmacılı satır ("Scott Coleman: Protego!") yine gösterilir; adsız aynı satır
+    /// zaten hedef dilde sayılır.
+    [Fact]
+    public async Task SpeakerLineWhoseTranslationIsTheSameIsStillShown()
+    {
+        var sender = new FakeSender();
+        var pipeline = new SubtitlePipeline(new FakeReader("Scott Coleman: Protego!", "Scott Coleman: Protego!", "Scott Coleman: Protego!"), new EchoTranslator(), sender);
+        await Run(pipeline, 3);
+        Assert.Equal(["Scott Coleman: Protego!"], sender.Sent);
+
+        var plain = new FakeSender();
+        await Run(new SubtitlePipeline(new FakeReader("Merhaba dünya.", "Merhaba dünya.", "Merhaba dünya."), new EchoTranslator(), plain), 3);
+        Assert.Empty(plain.Sent);
+
+        // Büyük harfli jenerik satırı konuşma değildir.
+        var credits = new FakeSender();
+        await Run(new SubtitlePipeline(new FakeReader("PRODUCTION DIRECTOR: SOPHIE BUHLER", "PRODUCTION DIRECTOR: SOPHIE BUHLER", "PRODUCTION DIRECTOR: SOPHIE BUHLER"), new EchoTranslator(), credits), 3);
+        Assert.Empty(credits.Sent);
+        var particle = new FakeSender();
+        await Run(new SubtitlePipeline(new FakeReader("EXECUTIVE PRODUCER: GUILLAUME de FONDAUMIERE", "EXECUTIVE PRODUCER: GUILLAUME de FONDAUMIERE", "EXECUTIVE PRODUCER: GUILLAUME de FONDAUMIERE"), new EchoTranslator(), particle), 3);
+        Assert.Empty(particle.Sent);
     }
 
     [Fact]
@@ -408,6 +511,86 @@ public class SubtitlePipelineTests
         Assert.Equal([SubtitlePipeline.ReadingTime("TR: Hold the gate."), SubtitlePipeline.ReadingTime("TR: Run!"), 15000], sender.Durations);
     }
 
+    /// Metro: yavaş çeviride aynı cümlenin belirirken bozuk okunan hâlleri sıraya dizilip cümle kalktıktan sonra art arda
+    /// gösteriliyordu ("Kapa çeneni inanamıyorum Kah!..", "Tamamen saç"). Eski okumalar atılır, yalnız sonuncusu gösterilir.
+    [Fact]
+    public async Task StaleRereadsOfTheSameLineAreDroppedWhenTranslationIsSlow()
+    {
+        var sender = new FakeSender();
+        var clock = new TestClock();
+        var translator = new GatedTranslator();
+        // Sahte çevirmen yalnız "TR: " ekler; uzun satırda çeviri kaynağa çok benzeyip "zaten Türkçe" sayılır, satırlar kısa.
+        var pipeline = new SubtitlePipeline(new FakeReader("Shut up.", "Shut up! Just", "Everyone! Shut up!"),
+            translator, sender, clock: clock.Read);
+        await Run(pipeline, 3, waitEach: false, clock: clock);
+        clock.Now += 500;
+        await translator.Release("Shut up.");
+        await translator.Release("Everyone! Shut up!");
+        await pipeline.WaitForTranslationsAsync();
+        Assert.Equal(["TR: Everyone! Shut up!"], sender.Sent);
+    }
+
+    /// <summary>Kendisine geleni "İYİ: " ile döndüren yavaş çevirmen (Gemini yerine).</summary>
+    private sealed class BetterTranslator : ITextTranslator
+    {
+        public List<string> Requested { get; } = [];
+        public Task<string> TranslateAsync(string text, CancellationToken cancellationToken = default)
+        {
+            lock (Requested) Requested.Add(text);
+            return Task.FromResult("Kapıyı hemen tutun, çabuk!");
+        }
+    }
+
+    /// Önce hızlı çeviri gösterilir; satır hâlâ ekrandayken iyileştiren çevirmenin sonucu onun yerine geçer.
+    [Fact]
+    public async Task UpgraderReplacesTheFastTranslationWhileTheLineIsOnScreen()
+    {
+        var sender = new FakeSender();
+        var better = new BetterTranslator();
+        var pipeline = new SubtitlePipeline(new FakeReader(Enumerable.Repeat("Hold the gate right now.", 8).ToArray()), new FakeTranslator(), sender)
+            { Upgrader = better, UpgradeDelayMs = 0 };
+        var improved = new List<string>();
+        pipeline.PairImproved += (_, translation) => improved.Add(translation);
+        for (var i = 0; i < 4; i++) { await pipeline.ProcessAsync(Frame.Blank(64, 64), new CropRegion()); await pipeline.WaitForTranslationsAsync(); }
+        for (var i = 0; i < 50 && improved.Count == 0; i++) await Task.Delay(20);
+        Assert.Equal(["TR: Hold the gate right now.", "Kapıyı hemen tutun, çabuk!"], sender.Sent);
+        Assert.Equal(["Kapıyı hemen tutun, çabuk!"], improved);
+    }
+
+    /// Satır iyileştirme sorulmadan kalktıysa iyileştiren çevirmene hiç gidilmez (menüde kayan yazılar hak harcamaz).
+    [Fact]
+    public async Task UpgraderIsNotAskedWhenTheLineIsGone()
+    {
+        var sender = new FakeSender();
+        var better = new BetterTranslator();
+        var clock = new TestClock();
+        var pipeline = new SubtitlePipeline(new FakeReader("Hold the gate right now.", "Hold the gate right now.", "", "", ""), new FakeTranslator(), sender, clock: clock.Read)
+            { Upgrader = better, UpgradeDelayMs = 200 };
+        // Satır ekrandan kalksın diye boş kareler arasında saat ilerler (kalkma 800 ms boş ekranla anlaşılır).
+        for (var i = 0; i < 5; i++)
+        {
+            await pipeline.ProcessAsync(Frame.Blank(64, 64), new CropRegion());
+            await pipeline.WaitForTranslationsAsync();
+            clock.Now += 500;
+        }
+        await Task.Delay(400);
+        Assert.Empty(better.Requested);
+        Assert.Equal(["TR: Hold the gate right now."], sender.Sent);
+    }
+
+    /// Kısa satır ("Skip", "Exactly!") iyileştirilmez: ekrandaki yazının değişmesi "iki kez göründü" gibi rahatsız ediyordu.
+    [Fact]
+    public async Task ShortLinesAreNotUpgraded()
+    {
+        var sender = new FakeSender();
+        var better = new BetterTranslator();
+        var pipeline = new SubtitlePipeline(new FakeReader(Enumerable.Repeat("Exactly!", 6).ToArray()), new FakeTranslator(), sender)
+            { Upgrader = better, UpgradeDelayMs = 0 };
+        for (var i = 0; i < 4; i++) { await pipeline.ProcessAsync(Frame.Blank(64, 64), new CropRegion()); await pipeline.WaitForTranslationsAsync(); }
+        await Task.Delay(200);
+        Assert.Empty(better.Requested);
+    }
+
     /// Daktilo efekti: yarım okunan cümlenin çevirisi sürerken tamamı gelirse yarımın çevirisi bırakılır, gösterilmez.
     [Fact]
     public async Task GrowingLineSupersedesItsPartialTranslation()
@@ -505,6 +688,99 @@ public class SubtitlePipelineTests
     {
         var deadline = DateTime.UtcNow.AddSeconds(3);
         while (!condition()) { Assert.True(DateTime.UtcNow < deadline); await Task.Delay(5); }
+    }
+}
+
+/// <summary>
+/// Parlak zeminde beyaz altyazı (It Takes Two, Duhan Ay, 2026-11-13): yazı tanıma ekranda duran altyazıyı saniyelerce
+/// okuyamıyor, TV'deki Türkçe siliniyordu. Gerçek okuma planıyla (<see cref="ReadScheduler"/>) ve gerçek bölge iziyle.
+/// </summary>
+public class BrightBackgroundPipelineTests
+{
+    /// <summary>Altyazının bölgedeki yeri (bölgenin kenarlarına oranla).</summary>
+    private static readonly TextBox SubtitleBox = new(0.3, 0.6, 0.7, 0.85);
+
+    /// <summary>Parlak sahne; <paramref name="subtitle"/> ise altyazının yerinde siyah-beyaz harf deseni, <paramref name="upper"/> bölgenin üst yarısının parlaklığı (sahnede kıpırdayan şey).</summary>
+    private static Frame Scene(bool subtitle, byte upper = 230)
+    {
+        var frame = Frame.Blank(640, 360);
+        Array.Fill(frame.Pixels, (byte)230);
+        var region = new CropRegion();
+        int left = (int)Math.Floor(640 * region.Left), top = (int)Math.Floor(360 * region.Top);
+        int width = (int)Math.Ceiling(640 * region.Right) - left, height = (int)Math.Ceiling(360 * region.Bottom) - top;
+        for (var y = 0; y < height; y++)
+            for (var x = 0; x < width; x++)
+            {
+                double rx = (double)x / width, ry = (double)y / height;
+                byte? value = null;
+                if (ry < 0.4) value = upper;
+                else if (subtitle && rx >= SubtitleBox.Left && rx < SubtitleBox.Right && ry >= SubtitleBox.Top && ry < SubtitleBox.Bottom)
+                    value = (byte)(x % 4 < 2 ? 255 : 0);
+                if (value is not { } v) continue;
+                var i = ((top + y) * frame.Stride) + ((left + x) * 4);
+                frame.Pixels[i] = frame.Pixels[i + 1] = frame.Pixels[i + 2] = v;
+            }
+        return frame;
+    }
+
+    /// <summary>Altyazı karedeyse okur; <see cref="Miss"/> açıkken yazı tanıma kaçırır (boş döner).</summary>
+    private sealed class BrightReader : ITextReader
+    {
+        public bool Miss { get; set; }
+        public string Read(Frame image) => ReadLines(image, false).Text;
+        public Reading ReadLines(Frame image, bool deep)
+        {
+            var hasSubtitle = image.Pixels.Any(b => b == 0);
+            return hasSubtitle && !Miss ? new Reading([new TextLine("Hold the gate.", SubtitleBox)]) : Reading.Empty;
+        }
+    }
+
+    private static async Task Feed(SubtitlePipeline pipeline, TestClock clock, Frame frame, int frames)
+    {
+        for (var i = 0; i < frames; i++)
+        {
+            await pipeline.ProcessAsync(frame, new CropRegion());
+            await pipeline.WaitForTranslationsAsync();
+            clock.Now += 50;
+        }
+    }
+
+    /// <summary>
+    /// Altyazı ekranda dururken yazı tanıma 2 sn kaçırıyor (sahnenin üstü kıpırdadı, kare yeniden okundu, okuma boş):
+    /// altyazının yeri değişmediği için Türkçe silinmez, yeniden de çevrilmez.
+    /// </summary>
+    [Fact]
+    public async Task MissedReadsOnAnUnchangedSubtitleKeepTheTranslation()
+    {
+        var clock = new TestClock();
+        var sender = new FakeSender();
+        var translator = new FakeTranslator();
+        var reader = new BrightReader();
+        var pipeline = new SubtitlePipeline(reader, translator, sender, new ReadScheduler(), clock.Read);
+        await Feed(pipeline, clock, Scene(subtitle: true), 3);
+        Assert.Equal(["TR: Hold the gate."], sender.Sent);
+        reader.Miss = true;
+        await Feed(pipeline, clock, Scene(subtitle: true, upper: 120), 40);
+        Assert.Equal(0, sender.Clears);
+        reader.Miss = false;
+        await Feed(pipeline, clock, Scene(subtitle: true, upper: 200), 3);
+        Assert.Equal(0, sender.Clears);
+        Assert.Equal(["TR: Hold the gate."], sender.Sent);
+        Assert.Single(translator.Requested);
+    }
+
+    /// <summary>Altyazı gerçekten kalkınca (yeri değişti) Türkçe her zamanki sürede silinir.</summary>
+    [Fact]
+    public async Task SubtitleLeavingAnUnchangedSceneStillClearsPromptly()
+    {
+        var clock = new TestClock();
+        var sender = new FakeSender();
+        var pipeline = new SubtitlePipeline(new BrightReader(), new FakeTranslator(), sender, new ReadScheduler(), clock.Read);
+        await Feed(pipeline, clock, Scene(subtitle: true), 3);
+        await Feed(pipeline, clock, Scene(subtitle: false), SubtitleStabilizer.ClearAfterMs / 50);
+        Assert.Equal(0, sender.Clears);
+        await Feed(pipeline, clock, Scene(subtitle: false), 1);
+        Assert.Equal(1, sender.Clears);
     }
 }
 

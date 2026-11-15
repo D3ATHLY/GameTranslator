@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 using System.Windows;
 using System.Windows.Controls;
@@ -24,7 +24,8 @@ public partial class ConsoleStep : UserControl
 
     private AppController Controller => (AppController)DataContext;
 
-    private string Host => selected ?? ManualHost.Text.Trim();
+    /// <summary>Elle yazılan adres temizlenir; adres değilse boş kalır ve "Bağlan" açılmaz.</summary>
+    private string Host => selected ?? ManualAddress.Normalize(ManualHost.Text) ?? "";
 
     private void ShowDone()
     {

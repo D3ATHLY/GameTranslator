@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 
 using GameTranslator.Core;
 
@@ -48,6 +48,17 @@ public class GlossaryTests
         Assert.Equal("yetenek ağacı", Glossary.BuiltIn.Turkish("skill tree"));
     }
 
+    // Phantom Blade Zero: kahramanın adı "Soul" çevrilmez, sıradan "soul" çevrilir (Emir, 2026-11-13).
+    [Fact]
+    public void KeepExactNamesMatchOnlyAsWritten()
+    {
+        var found = Glossary.BuiltIn.Find("Soul, you sold your soul. SOUL!");
+        Assert.Equal(["Soul"], found.Select(m => m.English));
+        Assert.Equal(0, found[0].Start);
+        Assert.DoesNotContain("soul", Glossary.BuiltIn.CapitalWords);
+        Assert.NotEqual(Glossary.Parse("""{ "keep": ["Soul"] }""").Fingerprint, Glossary.Parse("""{ "keepExact": ["Soul"] }""").Fingerprint);
+    }
+
     [Fact]
     public void LaterGlossaryWinsAndFingerprintFollowsContent()
     {
@@ -65,7 +76,7 @@ public class GlossaryTests
     [Fact]
     public void LoadsUserFolderAndSkipsBrokenFiles()
     {
-        var directory = Path.Combine(Path.GetTempPath(), "GameTranslator-glossary-" + Guid.NewGuid().ToString("N"));
+        var directory = Path.Combine(Path.GetTempPath(), "couchsubs-glossary-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         try
         {
@@ -87,7 +98,7 @@ public class GlossaryTests
     [Fact]
     public void StoreReloadsWhenAFileChanges()
     {
-        var directory = Path.Combine(Path.GetTempPath(), "GameTranslator-glossary-" + Guid.NewGuid().ToString("N"));
+        var directory = Path.Combine(Path.GetTempPath(), "couchsubs-glossary-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         var now = DateTimeOffset.UnixEpoch;
         try
@@ -186,4 +197,3 @@ public class TermProtectionTests
         Assert.Equal("Şimdi gidiyoruz.", TermProtector.Restore("Şimdi gidiyoruz.", slots, protector.AllSlots));
     }
 }
-

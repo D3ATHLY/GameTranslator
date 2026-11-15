@@ -252,5 +252,25 @@ public class PackPipelineTests
         await pipeline.WaitForTranslationsAsync();
         Assert.Equal(["Yere yat!"], sender.Sent);
     }
-}
 
+    /// <summary>
+    /// Mafia: satırın yarım okunan sonu ("look good.") pakette tek başına da var; az önce gösterilen satırın parçası
+    /// olduğu için ayrıca gösterilmez ("Güzel görün." bir an beliriyordu).
+    /// </summary>
+    [Fact]
+    public async Task TailOfTheLineJustShownIsNotShownFromThePack()
+    {
+        static PackMatch? Both(string text) => PackKey.Canon(text) switch
+        {
+            "gaetano that smoke doesn t look good" => new PackMatch("GAETANO: Şu duman... İyi görünmüyor.", []),
+            "look good" => new PackMatch("Güzel görün.", []),
+            _ => null,
+        };
+        var sender = new FakeSender();
+        var pipeline = new SubtitlePipeline(new FakeReader(
+            "GAETANO: That smoke... Doesn't look good.", "GAETANO: That smoke... Doesn't look good.",
+            "look good.", "look good.", "look good."), new FakeTranslator(), sender) { PackLookup = Both };
+        await Run(pipeline, 5);
+        Assert.Equal(["GAETANO: Şu duman... İyi görünmüyor."], sender.Sent);
+    }
+}

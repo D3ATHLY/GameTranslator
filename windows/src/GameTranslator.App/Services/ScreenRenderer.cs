@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 using System.IO;
 using System.Windows;
@@ -35,16 +35,18 @@ public static class ScreenRenderer
         {
             ThemeManager.Apply(app.Resources, dark);
             var suffix = dark ? "koyu" : "acik";
-            foreach (var step in Enum.GetValues<OnboardingStep>().Where(s => s != OnboardingStep.Done))
+            for (var step = 1; step <= 4; step++)
             {
-                var controller = Demo(step);
-                Save(() => new OnboardingView(controller), 640, 720, Path.Combine(folder, $"adim-{(int)step + 1}-{step}-{suffix}.png"));
+                var controller = Demo(OnboardingStep.Welcome);
+                var n = step;
+                Save(() => { var v = new OnboardingView(controller); v.ShowStep(n); return v; }, 640, 720, Path.Combine(folder, $"adim-{step}-{suffix}.png"));
             }
             Save(() => new MainView(Demo(OnboardingStep.Done)), 640, 720, Path.Combine(folder, $"ana-{suffix}.png"));
             // Uygulamanın gerçek penceresi: XAML'ı (simge dahil) açılıştaki gibi yüklenir.
             Save(() => Detach(new ShellWindow(Demo(OnboardingStep.Done))), 640, 720, Path.Combine(folder, $"pencere-{suffix}.png"));
             Save(() => Detach(new SettingsWindow(Demo(OnboardingStep.Done))), 600, 720, Path.Combine(folder, $"ayarlar-{suffix}.png"));
             Save(() => Detach(new AboutWindow()), 460, 640, Path.Combine(folder, $"hakkinda-{suffix}.png"));
+            Save(() => Detach(new GamePickerWindow()), 440, 560, Path.Combine(folder, $"oyun-sec-{suffix}.png"));
         }
         app.Shutdown();
     }
@@ -116,7 +118,8 @@ public static class ScreenRenderer
         public Task<IReadOnlyList<LgTv>> DiscoverTvsAsync() => Task.FromResult<IReadOnlyList<LgTv>>([new("[LG] webOS TV", "192.168.1.30")]);
         public Task<TvPairing> PairTvAsync(LgTv tv, string? key, string server) => throw new NotSupportedException();
         public IStreamSession MakeStream(RegisteredConsole? console, byte[]? accountId, UserSettings? settings = null) => throw new NotSupportedException();
-        public IKeeper MakeKeeper(LgTv tv, string? key, IReadOnlyDictionary<string, string> parameters, Func<bool> appConnected, Action<LgTv> onMoved) => throw new NotSupportedException();
+        public IKeeper MakeKeeper(LgTv tv, string? key, IReadOnlyDictionary<string, string> parameters, Func<bool> appConnected, Action<LgTv> onMoved,
+                       Action<string> onKey) => throw new NotSupportedException();
         public string? BundledTvAppVersion => null;
         public Task<bool> IsDevModeOnAsync(string host) => Task.FromResult(false);
         public Task<string> FetchDevKeyAsync(string host, string passphrase) => throw new NotSupportedException();

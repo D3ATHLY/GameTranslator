@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 using System.ComponentModel;
 using System.Net;
@@ -66,7 +66,8 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
     private bool subtitlesPaused;
     /// <summary>Oyundaki altyazının son görüldüğü yer; deneme altyazısı TV'de oraya yerleşir.</summary>
     private TextBox? lastSubtitleBox;
-    private int processing;
+    /// <summary>Hatta aynı anda tek kare girer; durdurma ve yeni hat kapıyı sıfırlar, takılan okuma hattı yeniden kurdurur (CouchSubs 7175247).</summary>
+    private readonly FrameGate frameGate = new();
     private Dubber? dubber;
     private string? updateVersion;
     private bool updating;
@@ -90,6 +91,7 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         console = store.Load<RegisteredConsole>(StoreKeys.Console);
         tv = store.Load<LgTv>(StoreKeys.Tv);
         settings = settingsStore.Load();
+        history = services.HistoryFile is { } historyFile ? SubtitleHistory.Load(historyFile) : new SubtitleHistory();
         var ready = accountId is not null && console is not null && tv is not null && store.Load<string>(StoreKeys.TvKey) is not null;
         step = OnboardingStep.Done;
         server.ClientsChanged += OnClientsChanged;
@@ -98,6 +100,70 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
             try { await StartServerAsync(); } catch { }
             try { await CommunityPatchManager.Shared.UpdateFromRemoteRepoAsync(); } catch { }
         });
+        StartPool();
+    }
+
+    // --- Geçmiş ve canlı ölçümler (CouchSubs 93ffdba) ---
+
+    /// <summary>Çevrilen satırların geçmişi (arayüz iş parçacığında değişir); oturumlar arasında history.json'da kalır.</summary>
+    private readonly SubtitleHistory history;
+    /// <summary>Geçmiş dosyaya sırayla yazılır; yazmalar üst üste binmez.</summary>
+    private Task historySave = Task.CompletedTask;
+    private string metricsText = "";
+
+    /// <summary>TV'ye giden son satırın ölçümleri tek satırda ("OCR 40 ms · Çeviri 300 ms · Gecikme 520 ms"); satır gelene kadar boş.</summary>
+    public string MetricsText { get => metricsText; private set => Set(ref metricsText, value); }
+    /// <summary>Çevrilen satırlar, en yenisi başta (bu ve önceki oturumlar). Değişince bu özellik bildirilir.</summary>
+    public IReadOnlyList<SubtitleHistory.Entry> History => [.. history.Entries];
+
+    /// <summary>Gösterilen satır geçmişe eklenir (arayüz iş parçacığında) ve dosyaya yazılır.</summary>
+    private void AddToHistory(string source, string translation, LineOrigin origin)
+    {
+        if (!history.Add(source, translation, origin)) return;
+        Changed(nameof(History));
+        SaveHistory();
+    }
+
+    /// <summary>Geçmişi siler (dosyadaki de boşalır).</summary>
+    public void ClearHistory()
+    {
+        history.Clear();
+        Changed(nameof(History));
+        SaveHistory();
+    }
+
+    /// <summary>Bekleyen geçmiş yazmalarının bitmesini bekler (testler ve kapanış için).</summary>
+    public Task WaitForHistoryAsync() => historySave;
+
+    private void SaveHistory()
+    {
+        if (services.HistoryFile is not { } file) return;
+        var copy = history.Copy();
+        historySave = historySave.ContinueWith(_ =>
+        {
+            try { copy.Save(file); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+        }, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+    }
+
+    // --- Ortak havuz (CouchSubs) ---
+
+    private Timer? poolTimer;
+
+    private void StartPool()
+    {
+        if (services.Pool is not { } pool) return;
+        pool.SetEnabled(settings.SharePool);
+        // Beş dakikada bir gönderilir; sunucuya ulaşılamazsa kuyruk diskte bekler, sonra yeniden denenir.
+        poolTimer = new Timer(_ => _ = pool.FlushAsync(), null, LinePool.FlushInterval, LinePool.FlushInterval);
+    }
+
+    /// <summary>Pakette olmayan İngilizce satır havuza önerilir; herhangi bir pakette olan (başka oyunun bile) gönderilmez.</summary>
+    private void OfferToPool(string text)
+    {
+        if (settings.SourceLanguage != "en" || services.Pool is not { } pool) return;
+        if (CommunityPatchManager.Shared.Match(text) is not null) return;
+        pool.Offer(text);
     }
 
     // --- Durum ---
@@ -181,6 +247,7 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
             var old = settings;
             if (!Set(ref settings, value)) return;
             settingsStore.Save(value);
+            if (old.SharePool != value.SharePool) services.Pool?.SetEnabled(value.SharePool);
             server.SendStyle(value.Style);
             if (old.Dubbing != value.Dubbing) DubbingSettingsChanged(old.Dubbing);
             if (isRunning && (old.SourceLanguage != value.SourceLanguage || old.TargetLanguage != value.TargetLanguage
@@ -364,7 +431,7 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
     public Action<Uri> OpenInBrowser { get; set; } = _ => { };
 
     /// <summary>Samsung'da geliştirici modunda "Host PC IP" olarak yazılacak bu bilgisayarın adresi.</summary>
-    public string? ComputerAddress => LocalAddress(tv is { Host.Length: > 0 } target ? target.Host : "192.168.1.1");
+    public string? ComputerAddress => LocalAddress(tv is { Host.Length: > 0 } target ? target.Host : null);
 
     /// <summary>
     /// Geliştirici modu açık TV'de uygulamayı eksikse kurar, eskiyse günceller.
@@ -794,19 +861,33 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         }
         catch (TranslatorException error)
         {
-            server.Clear();
             post(() => TranslatorStatus = error.Status);
+            ShowScreenFailure(error);
             return ScreenOutcome.TranslatorUnavailable;
         }
-        catch
+        catch (Exception error)
         {
-            server.Clear();
+            SubtitleLog.Write($"ekran çevrilemedi: {error.GetType().Name}: {error.Message}");
+            ShowScreenFailure(error);
             return ScreenOutcome.Failed;
         }
         finally
         {
             if (screenWork == work) screenWork = null;
         }
+    }
+
+    /// <summary>Ekran çevrilemedi: nedeni TV'de birkaç saniye görünür, sessizce kaybolmaz (CouchSubs 26edd77).</summary>
+    private void ShowScreenFailure(Exception error)
+    {
+        server.Clear();
+        var reason = (error as TranslatorException)?.Status switch
+        {
+            TranslatorStatus.NeedsDownload => "ücretsiz çeviri modeli henüz inmedi.",
+            TranslatorStatus.EngineFailed => "ücretsiz çeviri başlatılamadı.",
+            _ => "bir sorun oldu, yeniden dene.",
+        };
+        server.SendSubtitle($"Ekran çevrilemedi: {reason}", 6000);
     }
 
     private void HideScreen()
@@ -865,7 +946,7 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
             {
                 var running = server;
                 var tvKeeper = services.MakeKeeper(tv, store.Load<string>(StoreKeys.TvKey), new Dictionary<string, string> { ["server"] = ServerAddress(tv) },
-                    () => running.ConnectedClients > 0, moved => post(() => TvMoved(moved)));
+                    () => running.ConnectedClients > 0, moved => post(() => TvMoved(moved)), key => post(() => store.Save(StoreKeys.TvKey, key)));
                 tvKeeper.Start(TimeSpan.FromSeconds(5));
                 keeper = tvKeeper;
                 _ = RefreshTvAppAsync();
@@ -873,12 +954,46 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
 
             sleep.Begin();
             IsRunning = true;
+            _ = WatchRunningGameAsync();
             UpdateTroubleClocks();
         }
         finally
         {
             IsStarting = false;
         }
+    }
+
+    /// <summary>PS5'e çalışan oyunu sorma aralığı (soru PS5'i uyandırmaz).</summary>
+    public static readonly TimeSpan RunningGameEvery = TimeSpan.FromSeconds(45);
+    private int watchingGame;
+
+    /// <summary>
+    /// Çeviri açıkken PS5'e hangi oyunun çalıştığı sorulur: paketi varsa elle seçim yokken o paket ilk satırdan kullanılır,
+    /// adı yapay zekâya bağlam olarak gider (CouchSubs d44bfe2'deki gibi, yerel kütüphane yerine doğrudan keşif sorusuyla).
+    /// </summary>
+    private async Task WatchRunningGameAsync()
+    {
+        if (Interlocked.Exchange(ref watchingGame, 1) == 1) return;
+        try
+        {
+            while (isRunning)
+            {
+                if (console is { Host.Length: > 0 } target &&
+                    await Ps5Status.QueryAsync(target.Host, TimeSpan.FromSeconds(2)).ConfigureAwait(false) is { } info)
+                {
+                    var pm = CommunityPatchManager.Shared;
+                    // Havuz satırları oyunun kimliği ve adıyla gider; paket hazırlarken oyunlar ayrılır.
+                    services.Pool?.SetGame(info.Game);
+                    if (pm.SetRunningGame(info.Game))
+                        SubtitleLog.Write(info.Game is { } game
+                            ? $"PS5'te çalışan oyun: {game.Name} ({game.TitleId}){(pm.DetectedGameId is { } id ? $", paket: {id}" : ", paketi yok")}"
+                            : "PS5'te oyun çalışmıyor");
+                }
+                await Task.Delay(RunningGameEvery).ConfigureAwait(false);
+            }
+        }
+        catch { /* ağ hatası çeviriyi etkilemez */ }
+        finally { Volatile.Write(ref watchingGame, 0); }
     }
 
     public void Stop()
@@ -890,6 +1005,8 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         keeper = null;
         pipeline?.Reset();
         pipeline = null;
+        // Yeni "Başlat" eski oturumdan kalan (belki takılmış) okumayı beklemeden temiz başlar.
+        frameGate.Reset();
         activeReader = null;
         screenWork?.Cancel();
         screenWork = null;
@@ -903,6 +1020,7 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         IsRunning = false;
         LastFrame = null;
         LastSource = "";
+        MetricsText = "";
         LastTranslation = "";
         SessionState = SessionState.Disconnected(DisconnectKind.Stopped);
         UpdateTroubleClocks();
@@ -956,6 +1074,8 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
             DisconnectKind.InUse => "Remote Play is in use on another device",
             DisconnectKind.Refused => "The PS5 refused the connection. Set up the PS5 again.",
             DisconnectKind.LoginPasscode => "The second user has a login passcode on the PS5. Turn it off in Settings › Users and Accounts.",
+            // Eskiden "Yeniden bağlanılıyor…" diye sonsuza kadar deneniyordu (CouchSubs 1e02870).
+            DisconnectKind.RegistrationInvalid => "The PS5 didn't accept this pairing. Pair the PS5 again with the second account in Settings.",
             _ => "Reconnecting…",
         }];
     }
@@ -964,6 +1084,14 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
     {
         Stop();
         server.Dispose();
+        poolTimer?.Dispose();
+        // Kapanırken kuyruk bir kez daha gönderilir; en çok birkaç saniye beklenir.
+        if (services.Pool is { } pool)
+        {
+            try { pool.FlushAsync().Wait(TimeSpan.FromSeconds(3)); }
+            catch (AggregateException) { }
+            pool.Save();
+        }
     }
 
     // --- İç işleyiş ---
@@ -973,23 +1101,96 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
     {
         pipeline?.Reset();
         pipeline = null;
+        // Eski hatta süren okuma beklenmez; yeni hat ilk karesini hemen alır.
+        frameGate.Reset();
         ActiveSourceLanguage = settings.SourceLanguage;
-        var reader = services.MakeReader(settings.SourceLanguage);
+        var reader = services.MakeSubtitleReader(settings.SourceLanguage);
         activeReader = reader;
         OcrMissing = reader is null || !services.HasOcrLanguage(settings.SourceLanguage);
         if (reader is null) return;
-        var built = new SubtitlePipeline(reader, MakeTranslator(), server, new ReadScheduler());
-        built.PackLookup = CommunityPatchManager.Shared.Match;
+        // Art arda altyazılara bölünen cümle bütün olarak çevrilir (hangi motor seçilirse seçilsin).
+        // Kısa ünlemler ("Well?", "Hurry!") İngilizceden Türkçeye hazır karşılıkla çevrilir; çevirmenler bağlamsız kısa
+        // satırı sözlük anlamıyla çeviriyordu ("Kuyu?", "Acele etmek!").
+        var phrasebook = settings.SourceLanguage.StartsWith("en", StringComparison.OrdinalIgnoreCase) &&
+                         settings.TargetLanguage.StartsWith("tr", StringComparison.OrdinalIgnoreCase)
+            ? ShortPhrases.Translate
+            : (Func<string, string?>?)null;
+        // Konuşmacı adları: Windows'un okuyucusu bazı adları hep aynı biçimde bozuyor ("Aloy" → "Alou"); adı henüz
+        // doğrulanmamış satırı güçlü okuyucu da okur, onun okuduğu ad doğru ad sayılır.
+        var names = new SpeakerNames();
+        if (reader is HybridReader hybrid)
+        {
+            hybrid.NeedsStrong = names.NeedsCheck;
+            hybrid.StrongRead = names.Confirm;
+        }
+        // (Önce cihaz üstü çeviri gösterip Gemini'ninkini sonra yerine koyma denendi: ekrandaki yazının değişmesi
+        // kullanıcıya göre mantıklı değildi; Gemini seçiliyse çeviri yine doğrudan Gemini'den gelir. Hattın Upgrader'ı kaldı.)
+        var built = new SubtitlePipeline(reader, new ContinuationTranslator(MakeTranslator(), looksMisread: text => SubtitlePipeline.ExtraMisreadCheck?.Invoke(text) ?? false)
+        {
+            Phrasebook = phrasebook,
+            Names = names,
+        }, server, new ReadScheduler());
+        // Paket yalnız oynanan oyunun paketiyse kullanılır (başka oyunun genel satırları yanlış çeviri basıyordu).
+        var packGate = new PackGate();
+        built.PackMissed += OfferToPool;
+        // Oyun elle seçildiyse paket ilk satırdan kullanılır (oyunun tanınması beklenmez).
+        built.PackLookup = text => CommunityPatchManager.Shared.GameKnown
+            ? CommunityPatchManager.Shared.Match(text)
+            : packGate.Filter(text, CommunityPatchManager.Shared.Match(text));
+        // Paket beklemesi kısa tutulur: 1.5.1'deki 300 / 800 ms her satıra gecikme ekliyordu. Tam cümle zaten
+        // beklemez; yarım görünen satır ve bozuk görünen okuma yalnız daha iyisine fırsat verecek kadar bekler.
+        // (Başka oyunların paketleri genel satırlarda ("Leave me alone!") isabet verdiği için isabete göre ayarlanmaz.)
+        // Bozuk okuma (yazım denetimine göre gerçek olmayan sözcük içeren satır) biraz daha uzun bekler: hareketli
+        // sahnede düzgün okuma çoğunlukla yarım saniye içinde geliyor; temiz satır bundan etkilenmez.
+        built.CleanWait = 150;
+        built.PackWait = 450;
+        // Aynı okuma yinelenirse (yazı tanıma satırı hep böyle okuyor) beklemenin kalanı atlanır.
+        built.SettledRelease = SubtitlePipeline.SettledAfterMs;
+        built.TidySpeakersAndHeadings = true;
+        // Otomatik algılamada şerit sert bir kırpma değildir: şeridin çevresi geniş okunur, şeritteki satırlar ve onlara
+        // bitişik satırlar altyazıdır (üç dört satıra uzayan altyazının alt satırı kesiliyordu).
+        // Şeride düşen arayüz yazısı (envanter çubuğu, savaş günlüğü) kısa sürede aynen yinelenir ve cümle gibi
+        // bitmez; üç kez çevrildikten sonra bir süre okunmaz.
+        var repeats = new RepeatedText();
+        built.LineFilter = (read, area) => WithoutGarbageLines(repeats.Without(settings.AutoRegion
+            ? autoBand is { } band ? SubtitleFinder.Grow(read, area, (band.Item1, band.Item2)) : WithoutOffCenterLines(read, area)
+            : read));
+        built.PairShown += (source, _) =>
+        {
+            if (repeats.Note(source) is { } blocked) SubtitleLog.Write($"arayüz yazısı: {SubtitleLog.Excerpt(blocked)} yineleniyor, artık çevrilmeyecek");
+        };
+        // Cümlenin başı okunamamış parça ("bad at surrendering.") bozuk okumadır: tamamı gelsin diye bekletilir;
+        // çok kısaysa ya da sözcüklerinin çoğu gerçek değilse hiç çevrilmez.
+        var misread = built.LooksMisread;
+        // Oyun her satırda konuşmacı adı gösteriyorsa (son üç satır adlı geldiyse) adsız okunan satır büyük olasılıkla
+        // adı kaçırılmış okumadır: adlı okuması gelsin diye kısa süre bekletilir (aynı satır önce adsız sonra adlı
+        // iki kez gösteriliyordu).
+        var speakerStreak = 0;
+        built.LooksMisread = text => misread(text) || Misspelling.IsOrphanFragment(text, built.LastPair?.Source) || LooksLikeFragment(text) ||
+            (Volatile.Read(ref speakerStreak) >= 3 && !text.Contains('\n') && !HasSpeakerLabel(text));
+        built.PairShown += (source, _) =>
+        {
+            if (HasSpeakerLabel(source)) Interlocked.Increment(ref speakerStreak);
+            else Volatile.Write(ref speakerStreak, 0);
+        };
+        built.IsGarbage = text => (SubtitlePipeline.ExtraGarbageCheck?.Invoke(text) ?? false) ||
+            (Misspelling.IsOrphanFragment(text, built.LastPair?.Source) && text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length <= 3);
+        // Altyazı günlüğü (altyazi.log): okunan satırlar ve akıbetleri; gösterilen çevirinin kendisi de yazılır.
+        built.Log = SubtitleLog.Write;
+        built.MetricsReady += metrics => post(() => MetricsText = metrics.Summary(text));
         built.PairShown += (source, translation) =>
         {
+            SubtitleLog.Write($"çeviri: {SubtitleLog.Excerpt(source)} ⇒ {SubtitleLog.Excerpt(translation)}");
             var box = built.LastBox;
+            var origin = built.LastOrigin == "paket" ? LineOrigin.Pack : LineOrigin.Engine;
             var ms = RegionTranslation.DisplayMilliseconds(translation);
             post(() =>
             {
                 LastSource = source;
                 LastTranslation = translation;
+                AddToHistory(source, translation, origin);
                 if (box is not null) lastSubtitleBox = box;
-                var targetBox = box ?? lastSubtitleBox ?? (settings.Region is { } r
+                var targetBox = box ?? lastSubtitleBox ?? (ActiveRegion is { } r
                     ? new TextBox(r.Left, r.Top, r.Right, r.Bottom)
                     : null);
                 LiveSubtitleShown?.Invoke(translation, ms, targetBox);
@@ -999,6 +1200,67 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         built.TranslationResult += error => post(() => TranslatorStatus = error ?? TranslatorStatus.Ready);
         built.SpeechReady += lines => post(() => Speak(lines));
         pipeline = built;
+    }
+
+    /// <summary>
+    /// Altyazı değişirken bir anlığına okunan parça gibi mi: konuşmacı adsız tek satır ve ya tek sözcük ("Yeah?",
+    /// "Sit?") ya da en çok üç sözcük olup cümlenin ortasından başlıyor (",to me.", "pin Ito me."). Böyle okuma bozuk
+    /// sayılır: kısa süre bekletilir, ardından tam satır gelirse atılır, gelmezse her zamanki gibi çevrilir.
+    /// </summary>
+    public static bool LooksLikeFragment(string text)
+    {
+        var line = text.Trim();
+        if (line.Length == 0 || line.Contains('\n') || HasSpeakerLabel(line)) return false;
+        var words = line.Split(' ', StringSplitOptions.RemoveEmptyEntries).Count(word => word.Any(char.IsLetter));
+        if (words == 1) return true;
+        if (words > 3) return false;
+        var first = line.FirstOrDefault(char.IsLetter);
+        return char.IsLower(first) || ",;.:-'".Contains(line[0]);
+    }
+
+    /// <summary>
+    /// Birden çok satırlı okumadan okunamayan satırları çıkarır (yazı belirirken ikinci satır "wee eats etic lid entia"
+    /// okunuyor ve okunan her bozuk hâli ayrı çeviri olarak gösteriliyordu). Hiç düzgün satır yoksa okuma olduğu gibi
+    /// kalır; bütünüyle bozuk okumayı okuma hattının kendi denetimi ele alır.
+    /// </summary>
+    /// <summary>
+    /// Altyazının yeri henüz öğrenilmeden geniş alan okunur; orada ekranın ortasından belirgin biçimde uzaktaki satırlar
+    /// (sol üstteki görev yazısı "Activate the statues", köşe göstergeleri) altyazı sayılmaz.
+    /// </summary>
+    public static Reading WithoutOffCenterLines(Reading reading, TextBox area)
+    {
+        if (reading.Lines.Count == 0) return reading;
+        var kept = reading.Lines.Where(line => line.Box is not { } box ||
+            Math.Abs((box.PlacedIn(area).Left + box.PlacedIn(area).Right) / 2 - 0.5) <= 0.2).ToList();
+        return kept.Count == reading.Lines.Count ? reading : new Reading(kept);
+    }
+
+    /// <summary>
+    /// Zemindeki dokudan ya da filigrandan okunan, tek "sözcüklük", tümü büyük harfli ve gerçek sözcük olmayan satır
+    /// ("IETTET", "HIITIIE"). Büyük harfli gerçek sözcük ("NO!", "RUN") ve kısaltmalar (en çok 3 harf) kalır.
+    /// </summary>
+    public static bool IsCapsJunk(string text, Func<string, bool>? isWord)
+    {
+        var token = text.Trim().Trim('.', ',', '!', '?', '-', '•', '\'', '"');
+        if (token.Length < 4 || token.Contains(' ') || !token.All(char.IsUpper)) return false;
+        return isWord is null ? !"AEIOU".Any(token.Contains) || token.Distinct().Count() * 2 <= token.Length : !isWord(token.ToLowerInvariant());
+    }
+
+    private static Reading WithoutGarbageLines(Reading reading)
+    {
+        if (reading.Lines.Count < 2 || SubtitlePipeline.ExtraGarbageCheck is not { } garbage) return reading;
+        var word = SubtitlePipeline.ExtraWordCheck;
+        var kept = reading.Lines.Where(line => !garbage(line.Text) && !IsCapsJunk(line.Text, word)).ToList();
+        return kept.Count == reading.Lines.Count || kept.Count == 0 ? reading : new Reading(kept);
+    }
+
+    /// <summary>Satır "Ad: söz" biçiminde mi (ad büyük harfle başlar, en çok üç sözcüktür).</summary>
+    private static bool HasSpeakerLabel(string text)
+    {
+        var line = text.TrimStart();
+        var colon = line.IndexOf(": ", StringComparison.Ordinal);
+        return colon is >= 2 and <= 30 && char.IsUpper(line[0]) && line[..colon].Split(' ').Length <= 3 &&
+               line[..colon].All(c => char.IsLetter(c) || c is ' ' or '-' or '.' or '\'' or '’');
     }
 
     private ITextTranslator MakeTranslator()
@@ -1132,12 +1394,22 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         post(() => LastFrame = frame);
         // Duraklatıldıysa kare yalnız ek bölgeler ve serbest alan için saklanır; altyazı okunmaz.
         if (subtitlesPaused) return;
+        TryFindSubtitles(frame);
         // Önceki kare hâlâ işleniyorsa bu kare atlanır; okuma kareleri biriktirmez.
         var current = pipeline;
-        if (current is null || Interlocked.Exchange(ref processing, 1) == 1) return;
+        if (current is null) return;
+        var entry = frameGate.TryEnter(Environment.TickCount64);
+        if (entry.Kind == FrameGate.EntryKind.Stuck)
+        {
+            // Okuma bitmedi: önizleme canlıyken altyazı hiç gelmiyordu ve ancak uygulamayı kapatıp açmak düzeltiyordu.
+            SubtitleLog.Write($"okuma {entry.Ms} ms'dir bitmedi; okuma hattı yeniden kuruldu");
+            post(MakePipeline);
+            return;
+        }
+        if (entry.Kind != FrameGate.EntryKind.Enter) return;
         try
         {
-            await current.ProcessAsync(frame, settings.Region);
+            await current.ProcessAsync(frame, ActiveRegion);
         }
         catch
         {
@@ -1145,9 +1417,94 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         }
         finally
         {
-            Volatile.Write(ref processing, 0);
+            frameGate.Leave(entry.Token);
         }
     }
+
+    // Otomatik altyazı algılama (SubtitleFinder): karenin tamamı ayrı bir okuyucuyla aralıklı okunur (şerit öğrenilene
+    // kadar saniyede bir, sonra iki saniyede bir). Öğrenilen şerit, ayarlarda "otomatik" açıkken okunan alan olur;
+    // hızlı okuma yalnız o şeritte yapılır. Bulgular altyazı günlüğüne "otomatik:" diye yazılır.
+    private const int FindEveryMs = 2000;
+    private const int LearnEveryMs = 1000;
+    /// <summary>Şerit öğrenilene kadar okunan alan: ekranın alt yarısına yakın, kenarlar hariç.</summary>
+    private static readonly CropRegion AutoStart = new(Top: 0.55, Bottom: 0.98, Left: 0.08, Right: 0.92);
+    private readonly SubtitleFinder finder = new();
+    private readonly HashSet<string> findLogged = [];
+    private ITextReader? findReader;
+    private string? findLanguage;
+    private (double Top, double Bottom)? findBand;
+    private volatile CropRegion? autoRegion;
+    /// <summary>Öğrenilen şerit (üst, alt); okunan geniş alandaki satırlar buna göre süzülür.</summary>
+    private volatile Tuple<double, double>? autoBand;
+    /// <summary>Okunan alan şeridin bu kadar üstünden ve altından başlar: uzayan altyazının satırları kesilmesin.</summary>
+    private const double BandMarginTop = 0.08, BandMarginBottom = 0.10;
+    private long lastFind;
+    private int finding;
+
+    /// <summary>Altyazının okunduğu alan: otomatikse öğrenilen şerit (henüz öğrenilmediyse geniş alt alan), değilse elle çizilen.</summary>
+    public CropRegion ActiveRegion => settings.AutoRegion ? autoRegion ?? AutoStart : settings.Region;
+
+    private void TryFindSubtitles(Frame frame)
+    {
+        var at = Environment.TickCount64;
+        if (!settings.AutoRegion && !SubtitleLog.IsEnabled) return;
+        var every = autoRegion is null ? LearnEveryMs : FindEveryMs;
+        if (at - lastFind < every || Interlocked.Exchange(ref finding, 1) == 1) return;
+        lastFind = at;
+        var language = settings.SourceLanguage;
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                if (findReader is null || findLanguage != language)
+                {
+                    findReader = services.MakeReader(language);
+                    findLanguage = language;
+                }
+                if (findReader is not { } reader) return;
+                var reading = reader.ReadLines(frame, deep: false).WithoutOcrNoise();
+                var took = Environment.TickCount64 - at;
+                foreach (var found in finder.Classify(reading, at))
+                {
+                    if (!findLogged.Add(found.Verdict + ":" + TextMatch.Normalize(found.Line.Text))) continue;
+                    if (findLogged.Count > 600) findLogged.Clear();
+                    var box = found.Line.Box!.Value;
+                    SubtitleLog.Write($"otomatik: {FindName(found.Verdict)} y=%{(box.Top + box.Bottom) * 50:0} x=%{(box.Left + box.Right) * 50:0} " +
+                                      $"({took} ms) {SubtitleLog.Excerpt(found.Line.Text)}");
+                }
+                // Şerit her yeni altyazıyla azıcık oynar; okunan alan yalnız belirgin değişince güncellenir (alan
+                // değişince okuma baştan kararlı hale gelmek zorunda kalır).
+                if (finder.Band is { } band &&
+                    (findBand is not { } old || Math.Abs(old.Top - band.Top) > 0.035 || Math.Abs(old.Bottom - band.Bottom) > 0.035))
+                {
+                    findBand = band;
+                    autoBand = Tuple.Create(band.Top, band.Bottom);
+                    autoRegion = new CropRegion(Math.Max(0, band.Top - BandMarginTop), Math.Min(0.99, band.Bottom + BandMarginBottom), AutoStart.Left, AutoStart.Right);
+                    SubtitleLog.Write($"otomatik: altyazı şeridi %{band.Top * 100:0}–%{band.Bottom * 100:0}" +
+                                      (settings.AutoRegion ? " (okunan alan güncellendi)" : " (elle seçilen alan kullanılıyor)"));
+                }
+            }
+            catch
+            {
+                // Deneme okuması başarısız olursa yalnız o tarama atlanır.
+            }
+            finally
+            {
+                Volatile.Write(ref finding, 0);
+            }
+        });
+    }
+
+    private static string FindName(SubtitleFinder.Verdict verdict) => verdict switch
+    {
+        SubtitleFinder.Verdict.Subtitle => "ALTYAZI",
+        SubtitleFinder.Verdict.Prompt => "elendi(tuş ipucu)",
+        SubtitleFinder.Verdict.Menu => "elendi(menü)",
+        SubtitleFinder.Verdict.Static => "elendi(sabit yazı)",
+        SubtitleFinder.Verdict.OffCenter => "elendi(ortada değil)",
+        SubtitleFinder.Verdict.NotSentence => "elendi(cümle değil)",
+        _ => "elendi(şerit dışı)",
+    };
 
     private async Task StartServerAsync()
     {
@@ -1176,38 +1533,15 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
     /// <summary>TV ile aynı ağdaki bilgisayar adresi.</summary>
     private string ServerAddress(LgTv target) => $"http://{LocalAddress(target.Host) ?? "127.0.0.1"}:{ServerPort}";
 
-    public static string? LocalAddress(string near)
+    /// <summary>
+    /// <paramref name="near"/> adresine (TV) ulaşan bu bilgisayar adresi; TV adresi bilinmiyorsa (null ya da geçersiz)
+    /// Wi-Fi/Ethernet adresi. VPN ve sanal bağdaştırıcılar (Hyper-V, WSL, VirtualBox…) ancak başka adres yoksa seçilir:
+    /// onlar da 192.168.x.x taşıyor ama TV onlara ulaşamıyor (CouchSubs 8f73eb9, <see cref="LocalNetwork.ChooseComputerAddress"/>).
+    /// </summary>
+    public static string? LocalAddress(string? near)
     {
-        IPAddress? target = null;
-        if (!string.IsNullOrEmpty(near)) IPAddress.TryParse(near, out target);
-
-        string? fallback = null;
-        foreach (var network in NetworkInterface.GetAllNetworkInterfaces())
-        {
-            if (network.OperationalStatus != OperationalStatus.Up || network.NetworkInterfaceType == NetworkInterfaceType.Loopback) continue;
-            foreach (var unicast in network.GetIPProperties().UnicastAddresses)
-            {
-                if (unicast.Address.AddressFamily != AddressFamily.InterNetwork) continue;
-                var ip = unicast.Address.ToString();
-                if (ip.StartsWith("127.") || ip.StartsWith("169.254.")) continue;
-
-                if (target != null && target.AddressFamily == AddressFamily.InterNetwork)
-                {
-                    try
-                    {
-                        var mask = unicast.IPv4Mask.GetAddressBytes();
-                        var address = unicast.Address.GetAddressBytes();
-                        var wanted = target.GetAddressBytes();
-                        if (Enumerable.Range(0, 4).All(i => (address[i] & mask[i]) == (wanted[i] & mask[i]))) return ip;
-                    }
-                    catch { }
-                }
-
-                if (ip.StartsWith("192.168.") || ip.StartsWith("10.")) return ip;
-                fallback ??= ip;
-            }
-        }
-        return fallback;
+        IPAddress? target = IPAddress.TryParse(near, out var parsed) && parsed.AddressFamily == AddressFamily.InterNetwork ? parsed : null;
+        return LocalNetwork.ChooseComputerAddress(LocalNetwork.Ipv4Adapters(), target);
     }
 
     // --- Windows Güvenlik Duvarı ---
@@ -1309,7 +1643,8 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
     {
         var now = Clock();
         var ps5Trouble = isRunning && sessionState.Phase != SessionPhase.Streaming && sessionState.Reason?.Kind is not
-            (DisconnectKind.ConsoleAsleep or DisconnectKind.InUse or DisconnectKind.Refused or DisconnectKind.LoginPasscode);
+            (DisconnectKind.ConsoleAsleep or DisconnectKind.InUse or DisconnectKind.Refused or DisconnectKind.LoginPasscode
+             or DisconnectKind.RegistrationInvalid);
         ps5TroubleSince = ps5Trouble ? ps5TroubleSince ?? now : null;
         tvWaitingSince = isRunning && tvClients == 0 ? tvWaitingSince ?? now : null;
     }

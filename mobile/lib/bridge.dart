@@ -19,6 +19,8 @@ class EngineState {
     this.frameWidth = 0,
     this.frameHeight = 0,
     this.translated = 0,
+    this.packHits = 0,
+    this.packGame = '',
     this.nativeAvailable = true,
   });
 
@@ -36,6 +38,10 @@ class EngineState {
   final int frameWidth;
   final int frameHeight;
   final int translated;
+
+  /// Oyun paketinden gösterilen satır sayısı ve paketin (oynanan oyunun) adı.
+  final int packHits;
+  final String packGame;
   final bool nativeAvailable;
 
   factory EngineState.fromMap(Map<Object?, Object?> map) => EngineState(
@@ -52,6 +58,8 @@ class EngineState {
         frameWidth: (map['frameWidth'] as num?)?.toInt() ?? 0,
         frameHeight: (map['frameHeight'] as num?)?.toInt() ?? 0,
         translated: (map['translated'] as num?)?.toInt() ?? 0,
+        packHits: (map['packHits'] as num?)?.toInt() ?? 0,
+        packGame: map['packGame'] as String? ?? '',
         nativeAvailable: map['nativeAvailable'] as bool? ?? true,
       );
 }
@@ -102,6 +110,7 @@ class AppSettings {
   String get deepLKey => json['deepLKey'] as String? ?? '';
   bool get autoWake => json['autoWake'] as bool? ?? true;
   String get glossary => json['glossary'] as String? ?? '';
+  bool get packsEnabled => json['packsEnabled'] as bool? ?? true;
 
   AppSettings copy() => AppSettings(jsonDecode(jsonEncode(json)) as Map<String, dynamic>);
 }

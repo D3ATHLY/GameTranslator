@@ -33,6 +33,8 @@ data class Settings(
     val autoWake: Boolean = true,
     /** Terim sözlüğü, bilgisayardaki sözlük dosyalarıyla aynı JSON biçiminde; boşsa sözlük yok. */
     val glossary: String = "",
+    /** Oyun paketleri (İngilizce→Türkçe): paketteki satır motora gitmeden paketin Türkçesiyle gösterilir. */
+    val packsEnabled: Boolean = true,
 ) {
     /** Sözlük metni çözülmüş hâliyle; boş ya da bozuksa boş sözlük. */
     fun parsedGlossary(): Glossary {
@@ -53,6 +55,7 @@ data class Settings(
         .put("deepLKey", deepLKey)
         .put("autoWake", autoWake)
         .put("glossary", glossary)
+        .put("packsEnabled", packsEnabled)
         .put("style", JSONObject()
             .put("fontSize", style.fontSize).put("bottomPercent", style.bottomPercent).put("placement", style.placement)
             .put("background", style.background).put("bold", style.bold).put("textColor", style.textColor)
@@ -80,6 +83,7 @@ data class Settings(
                 deepLKey = json.optString("deepLKey", ""),
                 autoWake = json.optBoolean("autoWake", true),
                 glossary = json.optString("glossary", ""),
+                packsEnabled = json.optBoolean("packsEnabled", true),
                 style = SubtitleStyle(
                     fontSize = s?.optInt("fontSize", d.fontSize) ?: d.fontSize,
                     bottomPercent = s?.optInt("bottomPercent", d.bottomPercent) ?: d.bottomPercent,

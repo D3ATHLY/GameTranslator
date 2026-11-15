@@ -15,3 +15,13 @@
 -keep class com.google.android.gms.internal.mlkit_language_id_common.** { *; }
 -keep class com.google.android.gms.internal.mlkit_common.** { *; }
 -keep class com.google.android.gms.internal.mlkit_vision_common.** { *; }
+
+# JSch (LG TV kurulumu) algoritma sınıflarını adlarıyla yansımayla yükler; isteğe bağlı bağımlılıkları yoktur.
+-keep class com.jcraft.jsch.** { *; }
+-dontwarn com.jcraft.jsch.**
+-dontwarn org.ietf.jgss.**
+-dontwarn org.bouncycastle.**
+-dontwarn org.newsclub.**
+-dontwarn com.sun.jna.**
+-dontwarn org.apache.logging.**
+-dontwarn org.slf4j.**

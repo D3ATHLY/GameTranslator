@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 
 using System.Net;
 using System.Net.Http.Headers;
@@ -59,6 +59,49 @@ public class LinePoolTests
         await pool.FlushAsync();
         Assert.Empty(pool.Queued);
         Assert.Empty(server.Received);
+    }
+
+    /// <summary>PS5'te çalışan oyun bilinince satırla gider; bilinmiyorsa alanlar hiç yazılmaz.</summary>
+    [Fact]
+    public async Task RunningGameTravelsWithTheLine()
+    {
+        var pool = MakePool();
+        pool.Offer("Who is that over there?");
+        pool.SetGame(RunningGame.Create("ppsa12345", "  Grand Theft Auto VI\n"));
+        pool.Offer("Get in the car, Lucia.");
+        pool.SetGame(null);
+        pool.Offer("Keep your head down, Jason.");
+        await pool.FlushAsync();
+        var lines = server.Batches[0];
+        Assert.Equal(["firstSeen", "key", "text"], lines[0].EnumerateObject().Select(p => p.Name).Order());
+        Assert.Equal("PPSA12345", lines[1].GetProperty("titleId").GetString());
+        Assert.Equal("Grand Theft Auto VI", lines[1].GetProperty("game").GetString());
+        Assert.False(lines[2].TryGetProperty("titleId", out _));
+    }
+
+    [Fact]
+    public void QueuedGameSurvivesRestart()
+    {
+        server.Fallback = null;
+        var pool = MakePool();
+        pool.SetGame(RunningGame.Create("PPSA12345", "Grand Theft Auto VI"));
+        pool.Offer("Get in the car, Lucia.");
+        pool.Save();
+        var reopened = MakePool();
+        Assert.Equal("PPSA12345", reopened.Queued[0].TitleId);
+        Assert.Equal("Grand Theft Auto VI", reopened.Queued[0].Game);
+    }
+
+    [Fact]
+    public void RunningGameValidatesTheTitleId()
+    {
+        Assert.Equal("CUSA00419_00", RunningGame.Create("CUSA00419_00", null)?.TitleId);
+        Assert.Null(RunningGame.Create("PPSA1234", "x"));
+        Assert.Null(RunningGame.Create("PPSA01234_0", "x"));
+        Assert.Null(RunningGame.Create("", "x"));
+        Assert.Null(RunningGame.Create(null, "x"));
+        Assert.Null(RunningGame.Create("PPSA01234", " \0 ")?.Name);
+        Assert.Equal(120, RunningGame.Create("PPSA01234", new string('x', 300))?.Name?.Length);
     }
 
     [Fact]
@@ -213,4 +256,3 @@ public class LinePoolTests
         Assert.Equal(TimeSpan.FromSeconds(120), LinePool.RetryDelay(RetryConditionHeaderValue.Parse("Mon, 26 Oct 2026 07:35:20 GMT"), now));
     }
 }
-

@@ -24,8 +24,19 @@ gösterir; Ayarlar'dan değiştirilir.
 ### TV'ler ve tarayıcı
 
 Telefon, bilgisayardakiyle aynı altyazı sunucusunu çalıştırır; LG (webOS), Samsung (Tizen) ve Android TV uygulamaları
-telefonu ağda kendileri bulur. TV uygulamasını TV'ye kurmak bilgisayardan yapılır (`docs/tv-kurulum.md`); uygulama içi
-rehber aynı adımları anlatır. Çeviri açıkken `http://TELEFON:8787/obs` adresi OBS için saydam zeminli altyazı sayfasını
+telefonu ağda kendileri bulur.
+
+TV uygulaması LG ve Android TV'ye telefondan kurulur: Rehber, Ayarlar ya da ana ekrandaki "TV uygulamasını kur"
+sihirbazı markayı sorar, TV'yi ağda arar (LG: SSDP, Android TV: 5555 portu taraması; adres elle de yazılabilir),
+geliştirici modu adımlarını tek tek gösterip TV'nin hazır olduğunu kendisi denetler, kurar ve TV'de açar.
+Android TV'ye ADB ile (onay sorusu TV'de çıkar), LG'ye geliştirici modunun Key Server'ı ve SSH'ı ile kurulur
+(`tvinstall/`, Windows'taki `GameTranslator.TvInstall` ve `LgTv/DevModeInstaller` ile aynı akış). Kurulan TV
+hatırlanır; yeni sürüm gelince aynı sihirbazdan güncellenir. Samsung'a kurulum şimdilik bilgisayardan yapılır
+(`docs/tv-kurulum.md`).
+
+Paketler `android/app/src/main/assets/tv-app/` altındadır: Android TV APK'sı `tv/android`'den
+(`gradlew assembleRelease`), LG paketi `python scripts/package-ipk.py --version auto --out-dir mobile/android/app/src/main/assets/tv-app`
+ile üretilir. Çeviri açıkken `http://TELEFON:8787/obs` adresi OBS için saydam zeminli altyazı sayfasını
 sunar (Windows'taki `/obs` ile aynı dosya).
 
 ### Terim sözlüğü
@@ -63,7 +74,7 @@ gömülemez. Renkler ve yazı ölçeği `lib/main.dart` içindeki `Tokens` ve `T
 Android MediaCodec olmasıdır.
 
 Bilgisayar sürümünde olup burada henüz olmayanlar: oyun paketleri (0 ms yamalar), dublaj, "ekranı çevir" ve ek
-bölgeler, yapay zekâ çevirmenleri, TV uygulamasını TV'ye kurma (kurulum bilgisayardan yapılır).
+bölgeler, yapay zekâ çevirmenleri, Samsung TV'ye uygulama kurma (bilgisayardan yapılır).
 
 Simge ve açılış ekranı görselleri uygulama simgesinden `python tool/make_icons.py` ile üretilir (Pillow gerekir).
 

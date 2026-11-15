@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -30,7 +30,9 @@ public sealed class SubtitleHistoryItem
     public required string Turkish { get; init; }
     public required string English { get; init; }
     public required string Time { get; init; }
-    public string Summary => $"[{Time}] 📺 {Turkish}  |  🎮 {English}";
+    /// <summary>Satır oyun paketinden mi geldi (insan çevirisi) yoksa çeviri motorundan mı.</summary>
+    public bool FromPack { get; init; }
+    public string Summary => $"[{Time}] {(FromPack ? "📦" : "📺")} {Turkish}  |  🎮 {English}";
 }
 
 /// <summary>Ana ekran: Mac sürümüyle birebir aynı 2 panelli modern arayüz ve 5 sekme.</summary>
@@ -56,13 +58,8 @@ public partial class MainView : UserControl
         controller.PropertyChanged += OnChanged;
         connectionWatch.Tick += async (_, _) => await controller.CheckConnectionsAsync();
 
-        controller.LiveSubtitleShown += (text, ms, _) =>
-        {
-            Dispatcher.BeginInvoke(() =>
-            {
-                AddSubtitleHistory(text);
-            });
-        };
+        // Geçmiş denetleyicide tutulur ve history.json'a yazılır; önceki oturumların satırları da görünür.
+        ReloadHistory();
 
         Loaded += (_, _) =>
         {
@@ -87,6 +84,7 @@ public partial class MainView : UserControl
         };
 
         Refresh();
+        FillGames();
         UpdateOverlayStatusUi(DesktopSubtitleOverlay.IsOverlayEnabled);
         _ = controller.CheckForUpdateAsync();
     }
@@ -116,6 +114,12 @@ public partial class MainView : UserControl
         CropLeftSlider.Value = s.Region.Left;
         CropRightSlider.Value = s.Region.Right;
 
+        if (s.AutoRegion)
+        {
+            selectedPreset = "Auto";
+            ShortcutPresetText.Text = "Otomatik";
+        }
+
         CropTopLabel.Text = $"%{Math.Round(s.Region.Top * 100)}";
         CropBottomLabel.Text = $"%{Math.Round(s.Region.Bottom * 100)}";
         CropLeftLabel.Text = $"%{Math.Round(s.Region.Left * 100)}";
@@ -123,6 +127,8 @@ public partial class MainView : UserControl
 
         // Checkboxlar
         BoldCheck.IsChecked = s.Style.Bold;
+        SpeakerColorCheck.IsChecked = s.Style.SpeakerColor;
+        SharePoolCheck.IsChecked = s.SharePool;
         DubbingCheck.IsChecked = s.DubbingEnabled;
         MutePcCheck.IsChecked = isMutePc;
         UpdatePcSesiButton();
@@ -173,8 +179,8 @@ public partial class MainView : UserControl
             SourceRadioRemotePlay.IsChecked = true;
             SourceWindowPickerCard.Visibility = Visibility.Collapsed;
             if (QuickSourcePickerCard != null) QuickSourcePickerCard.Visibility = Visibility.Collapsed;
-            if (StreamThumbnailTitle != null) StreamThumbnailTitle.Text = "🎮 PS5 Remote Play Canlı Akış";
-            if (ThumbnailStatusText != null) ThumbnailStatusText.Text = "PS5 Akışı Bekleniyor";
+            if (StreamThumbnailTitle != null) StreamThumbnailTitle.Text = "PS5 görüntüsü";
+            if (ThumbnailStatusText != null) ThumbnailStatusText.Text = "Görüntü bekleniyor";
         }
 
         if (controller.HasGeminiKey && GeminiKeyInput != null)
@@ -221,23 +227,26 @@ public partial class MainView : UserControl
         {
             MonitorTurkishText.Text = controller.LastTranslation;
             MonitorEnglishText.Text = string.IsNullOrWhiteSpace(controller.LastSource) ? "Subtitles active" : controller.LastSource;
-
-            // Geçmiş listesine ekle
-            AddSubtitleHistory(controller.LastTranslation, controller.LastSource ?? string.Empty);
         }
+
+        if (e.PropertyName == nameof(AppController.History)) ReloadHistory();
     }
 
-    private void AddSubtitleHistory(string turkish, string english = "")
+    /// <summary>Listeyi denetleyicinin geçmişinden yeniden kurar (en çok 200 satır; satır başına bir kez çağrılır).</summary>
+    private void ReloadHistory()
     {
-        if (string.IsNullOrWhiteSpace(turkish)) return;
-        history.Insert(0, new SubtitleHistoryItem
-        {
-            Turkish = turkish,
-            English = string.IsNullOrWhiteSpace(english) ? (controller.LastSource ?? string.Empty) : english,
-            Time = DateTime.Now.ToString("HH:mm:ss")
-        });
-        if (history.Count > 100) history.RemoveAt(history.Count - 1);
+        history.Clear();
+        foreach (var entry in controller.History)
+            history.Add(new SubtitleHistoryItem
+            {
+                Turkish = entry.Translation,
+                English = entry.Source,
+                Time = entry.Date.ToLocalTime().ToString(entry.Date.ToLocalTime().Date == DateTime.Today ? "HH:mm:ss" : "dd.MM HH:mm"),
+                FromPack = entry.Origin == LineOrigin.Pack,
+            });
     }
+
+    private void OnClearHistory(object sender, RoutedEventArgs e) => controller.ClearHistory();
 
     private void Refresh()
     {
@@ -253,9 +262,9 @@ public partial class MainView : UserControl
         StreamThumbnailDot.Fill = new SolidColorBrush(isStreaming
             ? Color.FromRgb(16, 185, 129)
             : (running ? Color.FromRgb(245, 158, 11) : Color.FromRgb(156, 163, 175)));
-        StreamThumbnailBadge.Text = isStreaming ? "1080p CANLI" : (running ? "BAĞLANIYOR" : "BEKLEMEDE");
+        StreamThumbnailBadge.Text = isStreaming ? "CANLI" : (running ? "BAĞLANIYOR" : "KAPALI");
         StreamThumbnailBadge.Foreground = new SolidColorBrush(isStreaming ? Color.FromRgb(56, 189, 248) : Color.FromArgb(140, 255, 255, 255));
-        ThumbnailStatusText.Text = isStreaming ? "PS5 Canlı Akışı Aktif" : (running ? "PS5 Yayını Bekleniyor..." : "PS5 Akışı Bekleniyor");
+        ThumbnailStatusText.Text = isStreaming ? "PS5 Canlı Akışı Aktif" : (running ? "PS5 Yayını Bekleniyor..." : "Görüntü bekleniyor");
         LiveBadgeText.Text = isStreaming ? "Canlı" : (running ? "Bekleniyor" : "Beklemede");
 
         // PS5 Durum Satırı
@@ -281,6 +290,8 @@ public partial class MainView : UserControl
             }
         }
 
+        RefreshHome(running, isStreaming);
+
         if (!running)
         {
             if (LiveStreamImage != null) LiveStreamImage.Source = null;
@@ -288,8 +299,8 @@ public partial class MainView : UserControl
             if (StreamPlaceholder != null)
             {
                 StreamPlaceholder.Visibility = Visibility.Visible;
-                if (StreamPlaceholderTitle != null) StreamPlaceholderTitle.Text = "PS5 Canlı Akışı Başlatılmadı";
-                if (StreamPlaceholderSubtitle != null) StreamPlaceholderSubtitle.Text = "PS5 ekranını canlı görmek için sol menüden '▶ Çeviriyi Başlat'a basın.";
+                if (StreamPlaceholderTitle != null) StreamPlaceholderTitle.Text = "Görüntü yok";
+                if (StreamPlaceholderSubtitle != null) StreamPlaceholderSubtitle.Text = "Görüntüyü görmek için çeviriyi başlat.";
             }
             if (ThumbnailPlaceholder != null) ThumbnailPlaceholder.Visibility = Visibility.Visible;
         }
@@ -302,6 +313,52 @@ public partial class MainView : UserControl
                 if (StreamPlaceholderSubtitle != null) StreamPlaceholderSubtitle.Text = "PS5 konsolunuza bağlanılıyor, görüntü otomatik olarak buraya yansıyacaktır.";
             }
         }
+    }
+
+    /// <summary>
+    /// Ana ekranın durumu (mobildeki gibi): tek cümlelik ipucu, PS5 → Bilgisayar → TV zinciri ve yalnız bir sorun
+    /// varken görünen uyarı.
+    /// </summary>
+    private void RefreshHome(bool running, bool streaming)
+    {
+        if (HomeHint == null) return;
+        var green = (Brush)FindResource("successBrush");
+        var orange = (Brush)FindResource("warningBrush");
+        var idle = (Brush)FindResource("idleBrush");
+        var red = (Brush)FindResource("dangerBrush");
+        var phase = controller.SessionState.Phase;
+        var paired = controller.Console != null;
+        var tvOn = controller.TvClients > 0;
+
+        ToggleText.Text = running ? "Çeviri açık" : "Çeviri kapalı";
+        (HomePs5Text.Text, HomePs5Dot.Fill) = !paired ? ("Eşleşmedi", red)
+            : streaming || phase == SessionPhase.Streaming ? ("Bağlı", green)
+            : running ? ("Bağlanıyor", orange)
+            : ("Eşleşti", idle);
+        (HomePcText.Text, HomePcDot.Fill) = running ? ("Çeviriyor", green) : ("Hazır", idle);
+        (HomeTvText.Text, HomeTvDot.Fill) = tvOn ? ("Bağlı", green) : running ? ("Bekleniyor", orange) : ("Bağlı değil", idle);
+        HomeTvText.ToolTip = controller.Tv?.Name;
+        HomePs5Text.ToolTip = controller.Console?.Host;
+
+        HomeHint.Text = !running ? "Oyunda altyazıları aç, sonra başlat."
+            : !tvOn ? "TV'de GameTranslator'ı aç; çeviri oyunun üstünde görünür."
+            : "Oynayabilirsin; çeviri TV'de oyunun üstünde görünür.";
+
+        // Uyarı yalnız bir şey yolunda değilken.
+        (string Title, string Text)? notice = !paired
+            ? ("PS5 eşleştirilmedi", "Ayarlar'daki Bağlantı sekmesinden PS5'i bir kez eşleştir.")
+            : phase == SessionPhase.Disconnected && controller.SessionState.Reason is { Kind: not DisconnectKind.Stopped }
+                ? ("PS5'e bağlanılamadı", controller.Ps5StatusText)
+                : running && !tvOn && controller.Tv is null
+                    ? ("TV seçilmedi", "Ayarlar'daki Bağlantı sekmesinden TV'ni ekle; çeviri şimdilik bilgisayarda görünür.")
+                    : null;
+        HomeNotice.Visibility = notice is null ? Visibility.Collapsed : Visibility.Visible;
+        if (notice is { } n)
+        {
+            HomeNoticeTitle.Text = n.Title;
+            HomeNoticeText.Text = n.Text;
+        }
+        HomePresetText.Text = ShortcutPresetText.Text;
     }
 
     private void UpdateLiveFrame(GameTranslator.Core.Frame frame)
@@ -409,15 +466,54 @@ public partial class MainView : UserControl
         if (TabDisplay.IsChecked == true) UpdateTvPreview();
     }
 
-    private void OnOcrShortcut(object sender, RoutedEventArgs e)
+    // --- Ana ekran ve Ayarlar ekranı ---
+
+    /// <summary>Ayarlar ekranını istenen sekmeyle açar (ana ekran mobildeki gibi sadedir; ayrıntılar burada).</summary>
+    private void ShowSettings(RadioButton tab)
     {
-        TabOcrArea.IsChecked = true;
+        tab.IsChecked = true;
+        HomeLayer.Visibility = Visibility.Collapsed;
+        SettingsLayer.Visibility = Visibility.Visible;
+        if (tab == TabOcrArea) UpdateOcrBox();
+        if (tab == TabDisplay) UpdateTvPreview();
     }
 
-    private void OnSettingsButton(object sender, RoutedEventArgs e)
+    private void OnBackHome(object sender, RoutedEventArgs e)
     {
-        TabSystem.IsChecked = true;
+        SettingsLayer.Visibility = Visibility.Collapsed;
+        HomeLayer.Visibility = Visibility.Visible;
+        Refresh();
     }
+
+    private void OnOcrShortcut(object sender, RoutedEventArgs e) => ShowSettings(TabOcrArea);
+
+    private void OnDisplayShortcut(object sender, RoutedEventArgs e) => ShowSettings(TabDisplay);
+
+    private void OnGuideShortcut(object sender, RoutedEventArgs e) => ShowSettings(TabGuide);
+
+    /// <summary>Oyun seçme penceresi (paketler yüklenmeden açılmaz; yükleme sürerken liste eksik kalırdı).</summary>
+    private void OnGameShortcut(object sender, RoutedEventArgs e)
+    {
+        if (!CommunityPatchManager.Shared.PacksReady) return;
+        GamePickerWindow.Open(Window.GetWindow(this));
+        FillGames();
+    }
+
+    /// <summary>Ana ekrandaki ve ayarlardaki seçili oyun yazısı.</summary>
+    private void FillGames()
+    {
+        var pm = CommunityPatchManager.Shared;
+        var selected = pm.SelectedGameId;
+        // Paketler henüz yükleniyor: ad yükleme bitince gelen olayla yazılır, arayüz beklemez.
+        // Otomatik'te PS5'in bildirdiği oyun da yazılır ("Otomatik · Mafia: The Old Country").
+        var name = selected is null ? (pm.RunningGame?.Name is { } running ? $"Otomatik · {running}" : "Otomatik")
+            : pm.PacksReady ? pm.Games.FirstOrDefault(g => g.Id == selected).Title ?? selected
+            : "…";
+        if (HomeGameText != null) HomeGameText.Text = name;
+        if (GameSelectText != null) GameSelectText.Text = name;
+    }
+
+    private void OnSettingsButton(object sender, RoutedEventArgs e) => ShowSettings(TabOcrArea);
 
     // --- Tab 1: Oyun Okuma Alanı & Şablonlar ---
 
@@ -429,6 +525,12 @@ public partial class MainView : UserControl
         loading = true;
         switch (tag)
         {
+            case "Auto":
+                // Altyazının yeri kendiliğinden bulunur; aşağıdaki kutu yalnız elle seçimde kullanılır.
+                ShortcutPresetText.Text = "Otomatik";
+                controller.Settings = controller.Settings with { AutoRegion = true };
+                loading = false;
+                return;
             case "BottomCenter":
                 CropTopSlider.Value = 0.72;
                 CropBottomSlider.Value = 0.85;
@@ -464,6 +566,7 @@ public partial class MainView : UserControl
 
         controller.Settings = controller.Settings with
         {
+            AutoRegion = false,
             Region = new CropRegion(CropTopSlider.Value, CropBottomSlider.Value, CropLeftSlider.Value, CropRightSlider.Value)
         };
         UpdateOcrBox();
@@ -478,6 +581,7 @@ public partial class MainView : UserControl
 
         controller.Settings = controller.Settings with
         {
+            AutoRegion = false,
             Region = new CropRegion(CropTopSlider.Value, CropBottomSlider.Value, CropLeftSlider.Value, CropRightSlider.Value)
         };
         UpdateOcrBox();
@@ -705,6 +809,20 @@ public partial class MainView : UserControl
         UpdateTvPreview();
     }
 
+    private void OnSharePool(object sender, RoutedEventArgs e)
+    {
+        if (loading) return;
+        controller.Settings = controller.Settings with { SharePool = SharePoolCheck.IsChecked == true };
+    }
+
+    private void OnSpeakerColor(object sender, RoutedEventArgs e)
+    {
+        if (loading) return;
+        controller.Settings = controller.Settings with { Style = controller.Settings.Style with { SpeakerColor = SpeakerColorCheck.IsChecked == true } };
+        controller.SyncStyle();
+        UpdateTvPreview();
+    }
+
     private void OnDubbing(object sender, RoutedEventArgs e)
     {
         if (loading) return;
@@ -727,7 +845,7 @@ public partial class MainView : UserControl
     private void UpdatePcSesiButton()
     {
         if (PcSesiButton == null) return;
-        PcSesiButton.Content = isMutePc ? "Sessiz (Muted)" : "Açık (Ses Var)";
+        PcSesiButton.Content = isMutePc ? "Sessiz" : "Açık";
         var color = isMutePc ? Color.FromRgb(239, 68, 68) : Color.FromRgb(16, 185, 129);
         PcSesiButton.Foreground = new SolidColorBrush(color);
         PcSesiButton.Background = new SolidColorBrush(Color.FromArgb(31, color.R, color.G, color.B));
@@ -1015,11 +1133,7 @@ public partial class MainView : UserControl
         OnReinstall(sender, e);
     }
 
-    private void OnDone(object sender, RoutedEventArgs e)
-    {
-        var win = Window.GetWindow(this);
-        if (win != null) win.WindowState = WindowState.Minimized;
-    }
+    private void OnDone(object sender, RoutedEventArgs e) => OnBackHome(sender, e);
 
     private void OnHyperlink(object sender, RequestNavigateEventArgs e)
     {
@@ -1063,8 +1177,8 @@ public partial class MainView : UserControl
             newSource = VideoSourceType.RemotePlay;
             SourceWindowPickerCard.Visibility = Visibility.Collapsed;
             if (QuickSourcePickerCard != null) QuickSourcePickerCard.Visibility = Visibility.Collapsed;
-            if (StreamThumbnailTitle != null) StreamThumbnailTitle.Text = "🎮 PS5 Remote Play Canlı Akış";
-            if (ThumbnailStatusText != null) ThumbnailStatusText.Text = "PS5 Akışı Bekleniyor";
+            if (StreamThumbnailTitle != null) StreamThumbnailTitle.Text = "PS5 görüntüsü";
+            if (ThumbnailStatusText != null) ThumbnailStatusText.Text = "Görüntü bekleniyor";
         }
 
         controller.Settings = controller.Settings with { VideoSource = newSource };
@@ -1256,6 +1370,7 @@ public partial class MainView : UserControl
             {
                 PatchStatusText.Text = pm.GetStatusSummary();
             }
+            FillGames();
         }
         catch { }
     }

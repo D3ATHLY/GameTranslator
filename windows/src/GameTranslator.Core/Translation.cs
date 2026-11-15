@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 
 using GameTranslator.Core.Dubbing;
 
@@ -21,6 +21,23 @@ public interface ITextTranslator
 
     /// <summary>Satırın çevirisini arka planda başlatır; aynı metin için sonraki <see cref="TranslateAsync"/> onu bekler.</summary>
     void Prefetch(string text) { }
+
+    /// <summary>
+    /// <see cref="TranslateAllAsync"/> bütün metinleri tek istekte çevirir (yapay zekâ); öyleyse "ekranı çevir" parça
+    /// parça istek göndermez.
+    /// </summary>
+    bool TranslatesTogether => false;
+
+    /// <summary>
+    /// Birbirinden bağımsız metinleri ("ekranı çevir"deki menü satırları, görev yazıları) aynı sırada çevirir.
+    /// Varsayılan: sırayla tek tek.
+    /// </summary>
+    async Task<IReadOnlyList<string>> TranslateAllAsync(IReadOnlyList<string> texts, CancellationToken cancellationToken = default)
+    {
+        var result = new List<string>(texts.Count);
+        foreach (var text in texts) result.Add(await TranslateAsync(text, cancellationToken).ConfigureAwait(false));
+        return result;
+    }
 }
 
 public enum TranslatorStatus
@@ -53,4 +70,3 @@ public enum OnlineKeyState { Valid, Invalid, QuotaExceeded, Unreachable, ModelRe
 /// <param name="Used">Bu ay kullanılan karakter (geçerli anahtarda).</param>
 /// <param name="Limit">Aylık sınır.</param>
 public sealed record OnlineKeyCheck(OnlineKeyState State, long Used = 0, long Limit = 0);
-

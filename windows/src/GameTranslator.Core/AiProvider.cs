@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 
 using System.Text.Json.Serialization;
 
@@ -212,8 +212,13 @@ public interface IOnlineTranslator
 {
     /// <summary>Hata başlayınca durumla, düzelince null ile çağrılır (yalnız değişince).</summary>
     event Action<OnlineKeyState?>? FailureChanged;
+
+    /// <summary>Son hata; çeviri düzgün gidiyorsa null.</summary>
+    OnlineKeyState? LastError => null;
+
+    /// <summary>Son istek dakikalık sınır yüzünden gönderilmedi ya da hizmet dakikalık sınırı bildirdi.</summary>
+    bool LastLineWasRateLimited => false;
 }
 
 /// <summary>Ayarlardaki "Dene": örnek satırın çevirisi ya da hatanın türü.</summary>
 public sealed record AiTestResult(OnlineKeyState State, string? Sample = null);
-

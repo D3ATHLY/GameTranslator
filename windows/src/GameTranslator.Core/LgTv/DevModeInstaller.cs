@@ -72,14 +72,14 @@ public sealed class DevModeInstaller(IRemoteShell shell, TimeSpan? pollInterval 
         new(new SshNetShell(host, Port, keyFile) { CommandTimeout = TimeSpan.FromMinutes(5) });
 
     public const int Port = 9922;
-    private const string AppInfoPath = "/media/developer/apps/usr/palm/applications/com.GameTranslator.tv/appinfo.json";
+    private const string AppInfoPath = "/media/developer/apps/usr/palm/applications/com.gametranslator.tv/appinfo.json";
     public const string TempDir = "/media/developer/temp";
     private const string InstallLog = TempDir + "/GameTranslator-install.log";
 
-    /// <summary>ares-install gibi paket TV'ye kendi adıyla yüklenir (<c>/media/developer/temp/com.GameTranslator.tv_0.9.6_all.ipk</c>).</summary>
+    /// <summary>ares-install gibi paket TV'ye kendi adıyla yüklenir (<c>/media/developer/temp/com.gametranslator.tv_0.9.6_all.ipk</c>).</summary>
     public static string RemotePackage(string package) => $"{TempDir}/{Path.GetFileName(package)}";
 
-    /// <summary><c>com.GameTranslator.tv_0.6.1_all.ipk</c> → <c>0.6.1</c></summary>
+    /// <summary><c>com.gametranslator.tv_0.6.1_all.ipk</c> → <c>0.6.1</c></summary>
     public static string? VersionOfPackage(string name)
     {
         var parts = name.Split('_');
@@ -193,7 +193,7 @@ public sealed class DevModeInstaller(IRemoteShell shell, TimeSpan? pollInterval 
         var remote = RemotePackage(package);
         // Önceki denemelerden kalan paketler TV'de yer kaplamasın.
         var upload = await SshAsync(
-            $"mkdir -p {TempDir} && rm -f {TempDir}/com.GameTranslator.tv_*.ipk {TempDir}/GameTranslator.ipk && cat > '{remote}'", package);
+            $"mkdir -p {TempDir} && rm -f {TempDir}/com.gametranslator.tv_*.ipk {TempDir}/GameTranslator.ipk && cat > '{remote}'", package);
         if (upload.Status != 0)
             throw Failure($"yükleme çıkış kodu {upload.Status}: {Short(upload.Output)}", upload.Output);
         // Paket TV'ye eksiksiz ulaştı mı? (wc yoksa ya da çıktı okunamazsa denetim atlanır.)

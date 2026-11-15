@@ -1,8 +1,14 @@
+import java.security.MessageDigest
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
+
+// Oyun paketleri (bilgisayar uygulamasıyla aynı dosyalar) ve derlemede kopyalandıkları yer.
+val gamePacks: File = rootProject.file("../../windows/src/GameTranslator.Core/Resources/packs")
+val gamePackAssets: File = layout.buildDirectory.dir("generated/gt-packs").get().asFile
 
 android {
     namespace = "com.gametranslator.gametranslator_mobile"
@@ -11,6 +17,9 @@ android {
 
     // Tarayıcı/OBS altyazı sayfası bütün platformlarda aynı dosyadır.
     sourceSets["main"].assets.srcDir("../../../core/Sources/GameTranslatorCore/Resources")
+    // Oyun paketleri bilgisayar uygulamasıyla aynı dosyalardır (windows/.../Resources/packs); depoda iki kez durmasınlar
+    // diye derlemede assets/packs altına kopyalanır (bkz. copyGamePacks).
+    sourceSets["main"].assets.srcDir(gamePackAssets)
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -81,5 +90,31 @@ dependencies {
     implementation("com.google.mlkit:text-recognition:16.0.1")
     implementation("com.google.mlkit:translate:17.0.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    // LG TV'ye geliştirici modu SSH'ı ile kurulum (BSD lisanslı JSch çatalı).
+    implementation("com.github.mwiede:jsch:0.2.20")
     testImplementation("junit:junit:4.13.2")
+    // android.jar'daki org.json yalnız iskelettir; JVM testleri gerçeğini kullanır.
+    testImplementation("org.json:json:20240303")
+}
+
+// AGP .gz varlıkları açıp APK'ya sıkıştırılmış JSON olarak koyar (packs/<id>.json; GamePackLibrary ikisini de okur).
+// Sunucu .gz dosyasının SHA-256'sını verdiği için uygulamadaki paketlerin özetleri burada, asıl dosyadan yazılır
+// (packs-sha256.txt); PackStore aynı paketi yeniden indirmez.
+val copyGamePacks by tasks.registering(Copy::class) {
+    from(gamePacks) { include("*.json.gz") }
+    into(File(gamePackAssets, "packs"))
+    doLast {
+        val digest = { file: File ->
+            MessageDigest.getInstance("SHA-256").digest(file.readBytes()).joinToString("") { b -> "%02x".format(b) }
+        }
+        val lines = gamePacks.listFiles { f -> f.name.endsWith(".json.gz") }!!.sortedBy { it.name }.map { "${digest(it)} ${it.name}" }
+        File(gamePackAssets, "packs-sha256.txt").writeText(lines.joinToString("\n", postfix = "\n"))
+    }
+}
+tasks.named("preBuild") { dependsOn(copyGamePacks) }
+
+// Testler gömülü paketleri depodaki yerinden okur.
+tasks.withType<Test>().configureEach {
+    systemProperty("gametranslator.packs", gamePacks.absolutePath)
+    maxHeapSize = "2g"
 }

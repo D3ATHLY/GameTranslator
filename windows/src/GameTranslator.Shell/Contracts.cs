@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 
 using System.Text.Json.Serialization;
 using GameTranslator.Core;
@@ -40,6 +40,11 @@ public enum TranslationEngine
 public sealed record UserSettings
 {
     public CropRegion Region { get; init; } = new();
+    /// <summary>
+    /// Altyazının yeri kendiliğinden bulunur (<see cref="SubtitleFinder"/>); <see cref="Region"/> yalnız kapalıyken
+    /// kullanılır. Altyazıyı alışılmadık yerde gösteren oyunlar için kapatılıp alan elle çizilebilir.
+    /// </summary>
+    public bool AutoRegion { get; init; } = true;
     /// <summary>Aktif çeviri motoru (DirectML, Gemini veya DeepL).</summary>
     public TranslationEngine Engine { get; init; } = TranslationEngine.DirectML;
     /// <summary>Ek bölge 1 (ör. sağ üstteki görev paneli); null ise kapalı. Num 1 tuşuyla bir kez okunup çevrilir.</summary>
@@ -65,6 +70,11 @@ public sealed record UserSettings
     }
     /// <summary>Anahtar girildiyse çeviri DeepL'le yapılır; kapalıysa ya da DeepL'e ulaşılamazsa cihaz üstü model.</summary>
     public bool OnlineTranslation { get; init; }
+    /// <summary>
+    /// Hiçbir pakette bulunmayan İngilizce oyun satırları ortak havuza gönderilir (anonim, yalnız satır metni ve oyun adı;
+    /// bkz. <see cref="LinePool"/>). Yeni oyun paketleri bunlardan hazırlanır. Ayarlardan kapatılabilir.
+    /// </summary>
+    public bool SharePool { get; init; } = LinePool.EnabledByDefault;
     /// <summary>Görüntü kaynağı: Remote Play (Chiaki arkada gizli), Yakalama Kartı (Capture Card), Masaüstü / Ekran / OBS.</summary>
     public VideoSourceType VideoSource { get; init; } = VideoSourceType.RemotePlay;
     public string? CaptureCardDeviceName { get; init; }
@@ -161,7 +171,9 @@ public interface IAppServices
     IStreamSession MakeStream(RegisteredConsole? console, byte[]? accountId, UserSettings? settings = null);
     /// <param name="appConnected">TV uygulaması bilgisayara bağlı mı (Samsung'da bağlıyken TV'ye dokunulmaz).</param>
     /// <param name="onMoved">TV ağda yeni bir adreste bulununca çağrılır.</param>
-    IKeeper MakeKeeper(LgTv tv, string? key, IReadOnlyDictionary<string, string> parameters, Func<bool> appConnected, Action<LgTv> onMoved);
+    /// <param name="onKey">TV bağlantıda yeni jeton verdi (Samsung); saklanır.</param>
+    IKeeper MakeKeeper(LgTv tv, string? key, IReadOnlyDictionary<string, string> parameters, Func<bool> appConnected, Action<LgTv> onMoved,
+                       Action<string> onKey);
     /// <summary>Uygulamayla gelen TV paketinin sürümü (geliştirici derlemesinde paket olmayabilir).</summary>
     string? BundledTvAppVersion { get; }
     Task<bool> IsDevModeOnAsync(string host);
@@ -181,6 +193,12 @@ public interface IAppServices
     Task<string> InstallAndroidAppAsync(string host, BundledTvApp app, Action<TvInstallEvent> onEvent);
     /// <summary>Oyun dili için yazı tanıyıcı; bilgisayarda hiç OCR dili yoksa null.</summary>
     ITextReader? MakeReader(string language);
+    /// <summary>
+    /// Altyazı şeridini okuyan tanıyıcı. Varsayılanı <see cref="MakeReader"/>; uygulama, güçlü okuyucunun modeli
+    /// kuruluysa hızlı okuyucuyu onunla birleştirir (<see cref="HybridReader"/>). Karenin tamamını tarayan işler
+    /// (altyazı yerini bulma, bölge çevirisi) hızlı okuyucuda kalır.
+    /// </summary>
+    ITextReader? MakeSubtitleReader(string language) => MakeReader(language);
     /// <summary>
     /// Oyun dilinin kendi yazı tanıma paketi yüklü mü. Değilse okuyucu sistemin diliyle (ör. Türkçe) okur ve İngilizce
     /// altyazı "thıs.messs" gibi bozulur; kullanıcıya paketi yüklemesi söylenir.
@@ -203,6 +221,10 @@ public interface IAppServices
     IUpdater? Updater => null;
     /// <summary>Windows Güvenlik Duvarı izni; Windows dışında ve testlerde null (hiçbir şey önerilmez).</summary>
     IFirewall? Firewall => null;
+    /// <summary>Ortak havuz (CouchSubs'ın havuz sunucusu); testlerde null (hiçbir şey gönderilmez).</summary>
+    LinePool? Pool => null;
+    /// <summary>Altyazı geçmişinin dosyası (%LOCALAPPDATA%\GameTranslator\history.json); testlerde null (diske yazılmaz).</summary>
+    string? HistoryFile => null;
 }
 
 /// <param name="Launched">false ise TV uygulaması açılamadı; büyük olasılıkla TV'de kurulu değil.</param>

@@ -39,7 +39,8 @@ public sealed record SubtitleStyle(
     bool Bold = false,
     SubtitleTextColor TextColor = SubtitleTextColor.White,
     TvDisplayMode DisplayMode = TvDisplayMode.InApp,
-    bool StackPrevious = true);
+    bool StackPrevious = true,
+    bool SpeakerColor = false);
 
 /// <summary>
 /// Android TV'de PS5 görüntüsünün nasıl gösterildiği. Yalnız Android TV uygulaması kullanır; diğer TV'ler ve OBS
@@ -110,6 +111,7 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
     internal const string PingFrame = ": ping\n\nevent: ping\ndata: {}\n\n";
 
     private readonly object gate = new();
+    private readonly StableCover stableCover = new();
     private readonly List<Client> clients = [];
     private TcpListener? listener;
     private Timer? pingTimer;
@@ -194,7 +196,15 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
         };
         if (paragraphs) json["paragraphs"] = true;
         if (replaces) json["replace"] = true;
-        if (box is { } b) json["box"] = BoxJson(b);
+        SubtitleStyle? style;
+        lock (gate) style = lastStyle;
+        // Örtme yerleşiminde zemin tek parça olsun diye kutu çevirinin sığacağı kadar büyütülür.
+        if (box is { } b)
+        {
+            var cover = style is { Placement: SubtitlePlacement.Cover } && !paragraphs;
+            // Zemin satırdan satıra zıplamasın, aynı altyazıda daralmasın (StableCover).
+            json["box"] = BoxJson(cover ? stableCover.Next(CoverFit.Box(b, text, style!.FontSize), newLine: !replaces) : b);
+        }
         Broadcast(Frame("subtitle", json), subtitle: true);
         EventSent?.Invoke(new SubtitleEvent(SubtitleEventKind.Subtitle, text, durationMs, paragraphs, replaces));
     }
@@ -461,16 +471,23 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
         catch (SocketException) { }
     }
 
+    /// <summary>
+    /// Örtme yerleşiminde TV iki zemin çizer: İngilizce altyazıyı örten kutu ve çevirinin kendi zemini. Boyları farklı
+    /// olduğu için arkada iki ayrı çubuk görünüyordu. Çevirinin kendi zemini kapatılır (yalnız örtü kalır), önceki
+    /// satır da üstüne yığılmaz; örtü kutusu çeviriye göre büyütülür (<see cref="CoverFit"/>).
+    /// </summary>
     private static string StyleFrame(SubtitleStyle style) =>
         Frame("style", new SortedDictionary<string, object>
         {
-            ["background"] = Math.Clamp(style.Background, 0, 100),
+            ["background"] = style.Placement == SubtitlePlacement.Cover ? 0 : Math.Clamp(style.Background, 0, 100),
             ["bold"] = style.Bold,
             ["bottomPercent"] = style.BottomPercent,
             ["displayMode"] = style.DisplayMode == TvDisplayMode.Overlay ? "overlay" : "inApp",
             ["fontSize"] = style.FontSize,
             ["placement"] = style.Placement.ToString().ToLowerInvariant(),
-            ["stackPrevious"] = style.StackPrevious,
+            // Konuşmacı adının rengi ("" kapalı): yazı sarıysa ad açık mavi, değilse sarı yazılır (yeni TV uygulaması).
+            ["speakerColor"] = !style.SpeakerColor ? "" : style.TextColor == SubtitleTextColor.Yellow ? "#64D2FF" : "#FFD60A",
+            ["stackPrevious"] = style.StackPrevious && style.Placement != SubtitlePlacement.Cover,
             ["textColor"] = style.TextColor.ToString().ToLowerInvariant(),
         });
 
