@@ -246,12 +246,14 @@ public sealed class CommunityPatchManager
             _patches.Clear();
             _packLibrary.Reload();
 
-            // 1. Proje içindeki patches/ klasörü
+            // 1. Proje içindeki patches/ ve yamalar/ klasörleri
             var searchPaths = new List<string>
             {
                 PatchesDirectory,
                 Path.Combine(AppContext.BaseDirectory, "patches"),
                 Path.Combine(Directory.GetCurrentDirectory(), "patches"),
+                Path.Combine(AppContext.BaseDirectory, "yamalar"),
+                Path.Combine(Directory.GetCurrentDirectory(), "yamalar"),
             };
 
             var loadedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -301,6 +303,8 @@ public sealed class CommunityPatchManager
             // Bilinen popüler topluluk yama listesi ve repo raw URL'leri
             var knownRemoteFiles = new[]
             {
+                "patches/final-fantasy-vii-remake.json",
+                "patches/final-fantasy-vii-rebirth.json",
                 "patches/dead_island_2.json"
             };
 
