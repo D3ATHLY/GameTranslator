@@ -184,11 +184,21 @@ PlayStation normalde Remote Play açılınca elinizdeki kumandayı televizyondan
 
 ## 🎮 Topluluk Oyun Yamaları (Community Game Patches)
 
-GameTranslator, fan çeviri gruplarının veya topluluk üyelerinin hazırladığı hazır yama dosyalarını (`.json`, `.txt`, `.srt`) doğrudan destekler. Uygulama hem `yamalar/` hem de `patches/` klasörlerini otomatik olarak tarar.
+GameTranslator, fan çeviri gruplarının veya topluluk üyelerinin hazırladığı hazır yama dosyalarını (`.json`, `.txt`, `.srt`) ve GamePack formatlarını doğrudan destekler. Uygulama hem `yamalar/` hem de `patches/` klasörlerini otomatik olarak tarar.
 
-### 📦 Depoda Hazır Bulunan Yamalar:
-* **Final Fantasy VII Remake:** `yamalar/final-fantasy-vii-remake.json` (11.305 satır)
+### 📦 Depoda Hazır Bulunan Yamalar (12 Oyun - 629.000+ Replik):
+* **Grand Theft Auto V:** `yamalar/gta-v.json` (190.566 satır - TechnoGame + Claude Haiku)
+* **Red Dead Redemption 2:** `yamalar/red-dead-redemption-2.json` (195.430 satır - Tam Oyun)
+* **Call of Duty: Modern Warfare (2019):** `yamalar/call-of-duty-modern-warfare-2019.json` (51.147 satır)
+* **Assassin's Creed Shadows:** `yamalar/assassins-creed-shadows.json` (39.615 satır)
+* **Elden Ring + Shadow of the Erdtree:** `yamalar/elden-ring.json` (37.951 satır)
 * **Final Fantasy VII Rebirth:** `yamalar/final-fantasy-vii-rebirth.json` (33.238 satır)
+* **Watch Dogs:** `yamalar/watch-dogs.json` (25.768 satır)
+* **Death Stranding 2: On the Beach:** `yamalar/death-stranding-2.json` (23.132 satır)
+* **Mafia: The Old Country:** `yamalar/mafia-the-old-country.json` (18.064 satır)
+* **Final Fantasy VII Remake:** `yamalar/final-fantasy-vii-remake.json` (5.758 satır + Fuzzy İndeks)
+* **Marvel's Spider-Man 2:** `yamalar/marvels-spider-man-2.json` (2.349 satır)
+* **Death Stranding Director's Cut:** `yamalar/death-stranding-directors-cut.json` (1.334 satır)
 
 * 📁 Hazır oyun yamaları için proje ana dizinindeki [`yamalar/`](yamalar/) veya [`patches/`](patches/) klasörlerini inceleyebilirsiniz.
 * 🌐 Yamaları bağımsız olarak takip etmek veya indirmek için: **[GitLab Yamalar Deposu](https://gitlab.com/sefflex/yamalar)**
@@ -200,15 +210,23 @@ GameTranslator, fan çeviri gruplarının veya topluluk üyelerinin hazırladı�
 
 ```text
 GameTranslate/
-├── yamalar/                        # 🎮 Hazır Türkçe Oyun Yamaları (FF7 Remake & Rebirth - 0ms Eşleme)
+├── yamalar/                        # 🎮 Hazır Türkçe Oyun Yamaları (12 Oyun, 629.000+ Replik - 0ms Eşleme)
 │   ├── README.md                   # Yama kataloğu ve detaylı rehber
-│   ├── final-fantasy-vii-remake.json   # 11.305 satır tam diyalog yaması
-│   └── final-fantasy-vii-rebirth.json  # 33.238 satır tam diyalog yaması
+│   ├── gta-v.json                  # Grand Theft Auto V (190k replik)
+│   ├── red-dead-redemption-2.json  # Red Dead Redemption 2 (195k replik)
+│   ├── elden-ring.json             # Elden Ring + DLC (38k replik)
+│   ├── assassins-creed-shadows.json# Assassin's Creed Shadows (39k replik)
+│   ├── call-of-duty-modern-warfare-2019.json # CoD MW 2019 (51k replik)
+│   ├── final-fantasy-vii-rebirth.json # FF7 Rebirth (33k replik)
+│   ├── final-fantasy-vii-remake.json  # FF7 Remake (5.7k replik)
+│   ├── watch-dogs.json             # Watch Dogs (25k replik)
+│   ├── death-stranding-2.json      # Death Stranding 2 (23k replik)
+│   ├── mafia-the-old-country.json  # Mafia: The Old Country (18k replik)
+│   ├── marvels-spider-man-2.json   # Marvel's Spider-Man 2 (2.3k replik)
+│   └── death-stranding-directors-cut.json # Death Stranding Director's Cut (1.3k replik)
 │
 ├── patches/                        # 🎮 Topluluk Oyun Yamaları Deposu (0ms Hazır Türkçe Altyazılar)
-│   ├── README.md                   # Yama ekleme ve katkı rehberi
-│   ├── final-fantasy-vii-remake.json
-│   └── final-fantasy-vii-rebirth.json
+│   └── README.md                   # Yama ekleme ve katkı rehberi
 │
 ├── mac/                            # 🍏 macOS Yerel Uygulaması (SwiftUI, Apple Vision OCR, NPU)
 │   ├── NativeApp.swift             # Ana masaüstü arayüzü & altyazı motoru
