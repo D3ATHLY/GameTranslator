@@ -13,6 +13,17 @@ Bu dizin, **GameTranslator** için topluluk tarafından hazırlanan veya popüle
 
 ---
 
+## 📦 Mevcut Hazır Oyun Yamaları
+
+| Oyun | Dosya Adı | Replik / Cümle Sayısı | Dosya Boyutu |
+| :--- | :--- | :--- | :--- |
+| **Final Fantasy VII Remake** | `final-fantasy-vii-remake.json` | **11.305** satır | ~1.65 MB |
+| **Final Fantasy VII Rebirth** | `final-fantasy-vii-rebirth.json` | **33.238** satır | ~4.09 MB |
+
+> 💡 Yamalar hem bu `patches/` klasöründen hem de ana dizindeki `yamalar/` klasöründen otomatik olarak taranır. Ayrılmış bağımsız repo için: [gitlab.com/sefflex/yamalar](https://gitlab.com/sefflex/yamalar)
+
+---
+
 ## 📁 Desteklenen Dosya Formatları
 
 GameTranslator uygulamasında **Çeviri & Modeller** sekmesinden ya da **Özel Altyazı** sekmesinden `.json`, `.txt` veya `.srt` uzantılı yama dosyalarını doğrudan içe aktarabilirsiniz.

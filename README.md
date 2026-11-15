@@ -16,7 +16,7 @@
 ## ⚡ v1.5.0 Yenilikleri
 
 * 🚀 **Tam Gizli (Headless) PS5 Remote Play:** Chiaki penceresini ekranda açmaya gerek kalmadan, doğrudan arka planda ultra düşük gecikmeli (38ms) yerel akış ve otomatik eşleştirme.
-* 🧩 **0 ms Hazır Türkçe Oyun Yamaları:** GTA V, Red Dead Redemption 2, Elden Ring, Mafia: The Old Country, Assassin's Creed Shadows, Death Stranding 2 ve CoD Modern Warfare 2019 için gömülü Türkçe oyun yamaları! Oyunu açtığınızda yama kendiliğinden tanınır ve çeviriyi beklemeden anında TV'ye yansıtılır.
+* 🧩 **0 ms Hazır Türkçe Oyun Yamaları:** Final Fantasy VII Remake, Final Fantasy VII Rebirth, GTA V, Red Dead Redemption 2, Elden Ring, Mafia: The Old Country ve Assassin's Creed Shadows için hazır Türkçe oyun yamaları! Oyunu açtığınızda yama kendiliğinden tanınır ve çeviriyi beklemeden anında TV'ye yansıtılır.
 * 🎥 **Genişletilmiş Görüntü Kaynağı (Capture Card & OBS):** PS5 Remote Play'in yanı sıra Elgato / USB Capture Card ve doğrudan Masaüstü / OBS canlı akışını seçebilme.
 * 🌐 **Dinamik Ağ ve Tak-Çalıştır:** Tüm sabit IP'ler ve geliştirici yolları temizlendi; yerel ağdaki PS5 ve TV'ler otomatik taranıp saniyeler içinde bağlanır.
 * 📦 **Modern Velopack Windows Kurulum Sihirbazı:** Tek tıkla otomatik kurulum, masaüstü kısayolu ve arka plan güncelleme desteği.
@@ -184,9 +184,14 @@ PlayStation normalde Remote Play açılınca elinizdeki kumandayı televizyondan
 
 ## 🎮 Topluluk Oyun Yamaları (Community Game Patches)
 
-GameTranslator, fan çeviri gruplarının veya topluluk üyelerinin hazırladığı hazır yama dosyalarını (`.json`, `.txt`, `.srt`) doğrudan destekler. 
+GameTranslator, fan çeviri gruplarının veya topluluk üyelerinin hazırladığı hazır yama dosyalarını (`.json`, `.txt`, `.srt`) doğrudan destekler. Uygulama hem `yamalar/` hem de `patches/` klasörlerini otomatik olarak tarar.
 
-* 📁 Hazır oyun yamaları için GitLab depomuzdaki [`patches/`](patches/) klasörünü ziyaret edebilir ve dilediğiniz oyunu indirip tek tıkla uygulamaya yükleyebilirsiniz.
+### 📦 Depoda Hazır Bulunan Yamalar:
+* **Final Fantasy VII Remake:** `yamalar/final-fantasy-vii-remake.json` (11.305 satır)
+* **Final Fantasy VII Rebirth:** `yamalar/final-fantasy-vii-rebirth.json` (33.238 satır)
+
+* 📁 Hazır oyun yamaları için proje ana dizinindeki [`yamalar/`](yamalar/) veya [`patches/`](patches/) klasörlerini inceleyebilirsiniz.
+* 🌐 Yamaları bağımsız olarak takip etmek veya indirmek için: **[GitLab Yamalar Deposu](https://gitlab.com/sefflex/yamalar)**
 * 🛠️ Kendi yama dökümlerinizi GameTranslator formatına dönüştürmek için [`scripts/patch_converter.py`](scripts/patch_converter.py) aracını kullanabilirsiniz.
 
 ---
@@ -195,15 +200,21 @@ GameTranslator, fan çeviri gruplarının veya topluluk üyelerinin hazırladı�
 
 ```text
 GameTranslate/
+├── yamalar/                        # 🎮 Hazır Türkçe Oyun Yamaları (FF7 Remake & Rebirth - 0ms Eşleme)
+│   ├── README.md                   # Yama kataloğu ve detaylı rehber
+│   ├── final-fantasy-vii-remake.json   # 11.305 satır tam diyalog yaması
+│   └── final-fantasy-vii-rebirth.json  # 33.238 satır tam diyalog yaması
+│
+├── patches/                        # 🎮 Topluluk Oyun Yamaları Deposu (0ms Hazır Türkçe Altyazılar)
+│   ├── README.md                   # Yama ekleme ve katkı rehberi
+│   ├── final-fantasy-vii-remake.json
+│   └── final-fantasy-vii-rebirth.json
+│
 ├── mac/                            # 🍏 macOS Yerel Uygulaması (SwiftUI, Apple Vision OCR, NPU)
 │   ├── NativeApp.swift             # Ana masaüstü arayüzü & altyazı motoru
 │   ├── build.sh                    # Tek komutla Apple Developer imzalı derleme aracı
 │   ├── project.yml                 # XcodeGen proje dosyası
 │   └── GameTranslator/             # Varlıklar, ikonlar ve Info.plist
-│
-├── patches/                        # 🎮 Topluluk Oyun Yamaları Deposu (0ms Hazır Türkçe Altyazılar)
-│   ├── README.md                   # Yama ekleme ve katkı rehberi
-│   └── ornek_oyun_yamasi.json      # Örnek topluluk yaması
 │
 ├── windows/                        # 🪟 Windows Yerel Uygulaması (.NET 10, C#, WPF, DirectML)
 │   ├── GameTranslator.Windows.slnx # Visual Studio / Rider Çözümü
