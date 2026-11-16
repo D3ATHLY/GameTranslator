@@ -1,4 +1,4 @@
-# 🎮 GameTranslator v1.6 Pro — Sefflex Edition
+# 🎮 GameTranslator v1.6 Pro
 ### Konsol ve PC Oyunları İçin Gerçek Zamanlı, Sıfır Gecikmeli Türkçe Altyazı ve Hazır Yama Sistemi
 
 [![Platform: macOS](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows-blue?style=flat-square&logo=apple)](https://gitlab.com/sefflex/GameTranslator)
