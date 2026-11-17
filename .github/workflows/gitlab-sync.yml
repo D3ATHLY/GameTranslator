@@ -1,10 +1,10 @@
-name: GitLab Full Sync
+name: GitLab Release Sync
 
 on:
   schedule:
     # Runs every 30 minutes
     - cron: '*/30 * * * *'
-  workflow_dispatch: # Allows manual trigger
+  workflow_dispatch: # Allows manual trigger from the Actions tab
 
 permissions:
   contents: write
@@ -20,81 +20,36 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Sync Full Source Code from GitLab
-        run: |
-          # Get GitLab repository URL and default branch
-          PROJECT_INFO=$(curl -s "$GITLAB_URL/api/v4/projects/$GITLAB_PROJECT_ID")
-          GITLAB_REPO_URL=$(echo "$PROJECT_INFO" | jq -r '.http_url_to_repo // empty')
-          DEFAULT_BRANCH=$(echo "$PROJECT_INFO" | jq -r '.default_branch // "main"')
-
-          if [ -n "$GITLAB_REPO_URL" ]; then
-            echo "Syncing full source code from $GITLAB_REPO_URL ($DEFAULT_BRANCH)..."
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            
-            # Workflow dosyamızı güvenli bir geçici klasöre yedekle
-            mkdir -p /tmp/workflow_backup
-            cp .github/workflows/gitlab-sync.yml /tmp/workflow_backup/gitlab-sync.yml
-
-            git remote add gitlab "$GITLAB_REPO_URL" || git remote set-url gitlab "$GITLAB_REPO_URL"
-            git fetch gitlab "$DEFAULT_BRANCH" --tags
-            
-            # GitLab koduna geçiş yap
-            git checkout -B temp-sync "gitlab/$DEFAULT_BRANCH"
-
-            # GitLab'den gelen tüm .github klasörünü tamamen sil (Yetki hatasını kesin olarak önler)
-            rm -rf .github
-
-            # Yedeklediğimiz kendi workflow dosyamızı geri yükle
-            mkdir -p .github/workflows
-            cp /tmp/workflow_backup/gitlab-sync.yml .github/workflows/gitlab-sync.yml
-
-            git add .
-            git commit -m "Sync code from GitLab securely" || true
-            git push origin temp-sync:main --force
-            git push origin --tags --force
-          fi
-
-      - name: Sync Latest GitLab Release (A-to-Z)
+      - name: Check and Sync Latest GitLab Release
         run: |
           # Fetch releases from GitLab API
           RESPONSE=$(curl -s "$GITLAB_URL/api/v4/projects/$GITLAB_PROJECT_ID/releases")
           
-          # Extract details of the latest release
-          LATEST_TAG=$(echo "$RESPONSE" | jq -r '..tag_name // empty')
-          RELEASE_NAME=$(echo "$RESPONSE" | jq -r '..name // empty')
-          DESCRIPTION=$(echo "$RESPONSE" | jq -r '..description // empty')
+          # Extract details of the latest release (first item in the array)
+          LATEST_TAG=$(echo "$RESPONSE" | jq -r '.[0].tag_name // empty')
+          RELEASE_NAME=$(echo "$RESPONSE" | jq -r '.[0].name // empty')
+          DESCRIPTION=$(echo "$RESPONSE" | jq -r '.[0].description // empty')
 
+          # Stop if no release is found
           if [ -z "$LATEST_TAG" ]; then
             echo "No releases found on GitLab."
             exit 0
           fi
 
-          if [ -z "$RELEASE_NAME" ]; then
-            RELEASE_NAME="$LATEST_TAG"
-          fi
-
-          # Save release notes to a markdown file
-          printf "%s\n" "$DESCRIPTION" > release_notes.md
-
-          # If release already exists, update its title and notes to match GitLab
+          # Check if the release already exists on GitHub
           if gh release view "$LATEST_TAG" >/dev/null 2>&1; then
-            echo "Updating existing release $LATEST_TAG..."
-            gh release edit "$LATEST_TAG" \
-              --title "$RELEASE_NAME" \
-              --notes-file release_notes.md
-            echo "Release $LATEST_TAG updated!"
+            echo "Release $LATEST_TAG is already up to date on GitHub."
             exit 0
           fi
 
-          echo "Creating new release: $LATEST_TAG..."
+          echo "New release found: $LATEST_TAG. Downloading assets..."
+
+          # Create directory for assets
           mkdir -p release_assets
           
-          # Download only attached binary/custom asset links (no redundant source zip)
-          ASSET_URLS=$(echo "$RESPONSE" | jq -r '..assets.links[]?.direct_asset_url // ..assets.links[]?.url // empty')
+          # Download attached binary/custom asset links
+          ASSET_URLS=$(echo "$RESPONSE" | jq -r '.[0].assets.links[]?.direct_asset_url // .[0].assets.links[]?.url // empty')
           for url in $ASSET_URLS; do
             if [ -n "$url" ]; then
               echo "Downloading asset: $url"
@@ -102,7 +57,22 @@ jobs:
             fi
           done
 
-          # Create the release on GitHub
+          # Download source code archive (zip)
+          SOURCE_ZIP=$(echo "$RESPONSE" | jq -r '.[0].assets.sources[]? | select(.format=="zip") | .url // empty')
+          if [ -n "$SOURCE_ZIP" ]; then
+            echo "Downloading source zip..."
+            wget -q -O "release_assets/source-$LATEST_TAG.zip" "$SOURCE_ZIP"
+          fi
+
+          # Save release notes to a markdown file
+          printf "%s\n" "$DESCRIPTION" > release_notes.md
+
+          # Set fallback title if release name is empty
+          if [ -z "$RELEASE_NAME" ]; then
+            RELEASE_NAME="$LATEST_TAG"
+          fi
+
+          # Create the release on GitHub and upload files if any exist
           if [ -n "$(ls -A release_assets)" ]; then
             gh release create "$LATEST_TAG" release_assets/* \
               --title "$RELEASE_NAME" \
