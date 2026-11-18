@@ -16,6 +16,7 @@ jobs:
       GITLAB_PROJECT_ID: "88821849"
       GITLAB_URL: "https://gitlab.com"
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }} # GitLab projeniz private ise GitHub Secrets'a ekleyin
 
     steps:
       - name: Checkout Repository
@@ -23,19 +24,34 @@ jobs:
 
       - name: Check and Sync Latest GitLab Release
         run: |
-          # Fetch releases from GitLab API
-          RESPONSE=$(curl -s "$GITLAB_URL/api/v4/projects/$GITLAB_PROJECT_ID/releases")
+          echo "Fetching releases from GitLab..."
           
+          # Curl request with optional GitLab token support
+          if [ -n "$GITLAB_TOKEN" ]; then
+            RESPONSE=$(curl -s -H "PRIVATE-TOKEN: $GITLAB_TOKEN" "$GITLAB_URL/api/v4/projects/$GITLAB_PROJECT_ID/releases")
+          else
+            RESPONSE=$(curl -s "$GITLAB_URL/api/v4/projects/$GITLAB_PROJECT_ID/releases")
+          fi
+
+          # Check if API response is valid JSON array
+          if ! echo "$RESPONSE" | jq -e 'type == "array"' >/dev/null 2>&1; then
+            echo "Error: Failed to fetch releases from GitLab. API response:"
+            echo "$RESPONSE"
+            exit 1
+          fi
+
           # Extract details of the latest release (first item in the array)
           LATEST_TAG=$(echo "$RESPONSE" | jq -r '.[0].tag_name // empty')
           RELEASE_NAME=$(echo "$RESPONSE" | jq -r '.[0].name // empty')
           DESCRIPTION=$(echo "$RESPONSE" | jq -r '.[0].description // empty')
 
           # Stop if no release is found
-          if [ -z "$LATEST_TAG" ]; then
+          if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "null" ]; then
             echo "No releases found on GitLab."
             exit 0
           fi
+
+          echo "Latest tag found on GitLab: $LATEST_TAG"
 
           # Check if the release already exists on GitHub
           if gh release view "$LATEST_TAG" >/dev/null 2>&1; then
@@ -43,7 +59,7 @@ jobs:
             exit 0
           fi
 
-          echo "New release found: $LATEST_TAG. Downloading assets..."
+          echo "New release found: $LATEST_TAG. Preparing to download assets..."
 
           # Create directory for assets
           mkdir -p release_assets
@@ -51,33 +67,43 @@ jobs:
           # Download attached binary/custom asset links
           ASSET_URLS=$(echo "$RESPONSE" | jq -r '.[0].assets.links[]?.direct_asset_url // .[0].assets.links[]?.url // empty')
           for url in $ASSET_URLS; do
-            if [ -n "$url" ]; then
+            if [ -n "$url" ] && [ "$url" != "null" ]; then
               echo "Downloading asset: $url"
-              wget -q -P release_assets "$url"
+              if [ -n "$GITLAB_TOKEN" ]; then
+                wget --header="PRIVATE-TOKEN: $GITLAB_TOKEN" -q -P release_assets "$url" || echo "Warning: Failed to download asset $url"
+              else
+                wget -q -P release_assets "$url" || echo "Warning: Failed to download asset $url"
+              fi
             fi
           done
 
           # Download source code archive (zip)
           SOURCE_ZIP=$(echo "$RESPONSE" | jq -r '.[0].assets.sources[]? | select(.format=="zip") | .url // empty')
-          if [ -n "$SOURCE_ZIP" ]; then
+          if [ -n "$SOURCE_ZIP" ] && [ "$SOURCE_ZIP" != "null" ]; then
             echo "Downloading source zip..."
-            wget -q -O "release_assets/source-$LATEST_TAG.zip" "$SOURCE_ZIP"
+            if [ -n "$GITLAB_TOKEN" ]; then
+              wget --header="PRIVATE-TOKEN: $GITLAB_TOKEN" -q -O "release_assets/source-$LATEST_TAG.zip" "$SOURCE_ZIP" || echo "Warning: Failed to download source zip"
+            else
+              wget -q -O "release_assets/source-$LATEST_TAG.zip" "$SOURCE_ZIP" || echo "Warning: Failed to download source zip"
+            fi
           fi
 
           # Save release notes to a markdown file
           printf "%s\n" "$DESCRIPTION" > release_notes.md
 
           # Set fallback title if release name is empty
-          if [ -z "$RELEASE_NAME" ]; then
+          if [ -z "$RELEASE_NAME" ] || [ "$RELEASE_NAME" = "null" ]; then
             RELEASE_NAME="$LATEST_TAG"
           fi
 
           # Create the release on GitHub and upload files if any exist
-          if [ -n "$(ls -A release_assets)" ]; then
+          if [ -n "$(ls -A release_assets 2>/dev/null)" ]; then
+            echo "Creating GitHub release with assets..."
             gh release create "$LATEST_TAG" release_assets/* \
               --title "$RELEASE_NAME" \
               --notes-file release_notes.md
           else
+            echo "Creating GitHub release without assets..."
             gh release create "$LATEST_TAG" \
               --title "$RELEASE_NAME" \
               --notes-file release_notes.md
